@@ -1,0 +1,528 @@
+{
+  "address": "FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN",
+  "metadata": {
+    "name": "shield_chat",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Private messaging on Solana"
+  },
+  "instructions": [
+    {
+      "name": "create_channel",
+      "docs": [
+        "Create a new encrypted channel",
+        "Metadata is encrypted via Arcium client-side"
+      ],
+      "discriminator": [
+        37,
+        105,
+        253,
+        99,
+        87,
+        46,
+        223,
+        20
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "channel_id",
+          "type": "u64"
+        },
+        {
+          "name": "encrypted_metadata",
+          "type": "bytes"
+        },
+        {
+          "name": "channel_type",
+          "type": {
+            "defined": {
+              "name": "ChannelType"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "join_channel",
+      "docs": [
+        "Add member to channel with optional token-gating"
+      ],
+      "discriminator": [
+        124,
+        39,
+        115,
+        89,
+        217,
+        26,
+        38,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "writable": true
+        },
+        {
+          "name": "member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  109,
+                  98,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "member_wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "member_wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "leave_channel",
+      "docs": [
+        "Leave channel (member removes themselves)"
+      ],
+      "discriminator": [
+        104,
+        0,
+        75,
+        134,
+        95,
+        80,
+        68,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "writable": true
+        },
+        {
+          "name": "member",
+          "writable": true
+        },
+        {
+          "name": "member_wallet",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "log_message",
+      "docs": [
+        "Log message hash on-chain (actual message stored off-chain)",
+        "This provides proof of message without revealing content"
+      ],
+      "discriminator": [
+        148,
+        4,
+        44,
+        34,
+        202,
+        5,
+        83,
+        115
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "writable": true
+        },
+        {
+          "name": "member"
+        },
+        {
+          "name": "sender",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "message_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "encrypted_ipfs_cid",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "set_token_gate",
+      "docs": [
+        "Set token-gating requirements (owner only)"
+      ],
+      "discriminator": [
+        181,
+        246,
+        120,
+        133,
+        255,
+        105,
+        150,
+        113
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "required_token_mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "min_token_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_channel",
+      "docs": [
+        "Update channel settings (owner only)"
+      ],
+      "discriminator": [
+        75,
+        204,
+        94,
+        165,
+        60,
+        180,
+        193,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_encrypted_metadata",
+          "type": {
+            "option": "bytes"
+          }
+        },
+        {
+          "name": "new_is_active",
+          "type": {
+            "option": "bool"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Channel",
+      "discriminator": [
+        49,
+        159,
+        99,
+        106,
+        220,
+        87,
+        219,
+        88
+      ]
+    },
+    {
+      "name": "Member",
+      "discriminator": [
+        54,
+        19,
+        162,
+        21,
+        29,
+        166,
+        17,
+        198
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "MessageLogged",
+      "discriminator": [
+        24,
+        236,
+        247,
+        207,
+        227,
+        70,
+        101,
+        210
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MetadataTooLarge",
+      "msg": "Metadata size exceeds maximum allowed"
+    },
+    {
+      "code": 6001,
+      "name": "ChannelFull",
+      "msg": "Channel has reached maximum member capacity"
+    },
+    {
+      "code": 6002,
+      "name": "ChannelInactive",
+      "msg": "Channel is not active"
+    },
+    {
+      "code": 6003,
+      "name": "InsufficientTokens",
+      "msg": "Insufficient token balance for channel access"
+    },
+    {
+      "code": 6004,
+      "name": "NotChannelMember",
+      "msg": "Sender is not a member of this channel"
+    },
+    {
+      "code": 6005,
+      "name": "MemberNotActive",
+      "msg": "Member is not active"
+    },
+    {
+      "code": 6006,
+      "name": "NotChannelOwner",
+      "msg": "Only channel owner can perform this action"
+    },
+    {
+      "code": 6007,
+      "name": "UnauthorizedSender",
+      "msg": "Unauthorized sender"
+    }
+  ],
+  "types": [
+    {
+      "name": "Channel",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "channel_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "encrypted_metadata",
+            "type": "bytes"
+          },
+          {
+            "name": "channel_type",
+            "type": {
+              "defined": {
+                "name": "ChannelType"
+              }
+            }
+          },
+          {
+            "name": "member_count",
+            "type": "u16"
+          },
+          {
+            "name": "message_count",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "name": "required_token_mint",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "min_token_amount",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChannelType",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "DirectMessage"
+          },
+          {
+            "name": "PrivateGroup"
+          },
+          {
+            "name": "TokenGated"
+          },
+          {
+            "name": "Public"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Member",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "channel",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "joined_at",
+            "type": "i64"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MessageLogged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "channel",
+            "type": "pubkey"
+          },
+          {
+            "name": "sender",
+            "type": "pubkey"
+          },
+          {
+            "name": "message_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "encrypted_ipfs_cid",
+            "type": "bytes"
+          },
+          {
+            "name": "message_number",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    }
+  ]
+}

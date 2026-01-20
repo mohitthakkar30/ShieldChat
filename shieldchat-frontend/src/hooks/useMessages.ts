@@ -1,0 +1,424 @@
+"use client";
+
+import { useCallback, useState, useRef } from "react";
+import { PublicKey, Connection, VersionedTransactionResponse } from "@solana/web3.js";
+import { fetchMessage, IPFSMessage, uploadMessage } from "@/lib/ipfs";
+import { RPC_ENDPOINT, PROGRAM_ID } from "@/lib/constants";
+
+// MessageLogged event discriminator from IDL
+const MESSAGE_LOGGED_DISCRIMINATOR = [24, 236, 247, 207, 227, 70, 101, 210];
+
+interface ParsedMessageLoggedEvent {
+  channel: PublicKey;
+  sender: PublicKey;
+  messageHash: Uint8Array;
+  encryptedIpfsCid: string;
+  messageNumber: bigint;
+  timestamp: bigint;
+}
+
+/**
+ * Parse MessageLogged event from Anchor program logs
+ * Anchor events are emitted as base64-encoded data in "Program data:" logs
+ */
+function parseMessageLoggedEvent(logs: string[]): ParsedMessageLoggedEvent | null {
+  try {
+    // Find the "Program data:" log that contains our event
+    for (const log of logs) {
+      if (!log.startsWith("Program data: ")) continue;
+
+      const base64Data = log.slice("Program data: ".length);
+      const data = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+      // Check if this matches our event discriminator
+      const discriminator = Array.from(data.slice(0, 8));
+      const matches = discriminator.every((b, i) => b === MESSAGE_LOGGED_DISCRIMINATOR[i]);
+
+      if (!matches) {
+        continue;
+      }
+
+      // Parse the event data:
+      // - 8 bytes: discriminator (already checked)
+      // - 32 bytes: channel (pubkey)
+      // - 32 bytes: sender (pubkey)
+      // - 32 bytes: message_hash ([u8; 32])
+      // - 4 bytes: encrypted_ipfs_cid length (u32 LE)
+      // - N bytes: encrypted_ipfs_cid data
+      // - 8 bytes: message_number (u64)
+      // - 8 bytes: timestamp (i64)
+
+      let offset = 8;
+
+      // channel (32 bytes)
+      const channel = new PublicKey(data.slice(offset, offset + 32));
+      offset += 32;
+
+      // sender (32 bytes)
+      const sender = new PublicKey(data.slice(offset, offset + 32));
+      offset += 32;
+
+      // message_hash (32 bytes fixed array)
+      const messageHash = data.slice(offset, offset + 32);
+      offset += 32;
+
+      // encrypted_ipfs_cid (length-prefixed bytes)
+      const cidLength = data[offset] |
+                       (data[offset + 1] << 8) |
+                       (data[offset + 2] << 16) |
+                       (data[offset + 3] << 24);
+      offset += 4;
+
+      const cidBytes = data.slice(offset, offset + cidLength);
+      const encryptedIpfsCid = new TextDecoder().decode(cidBytes);
+      offset += cidLength;
+
+      // message_number (8 bytes u64 LE)
+      const messageNumber = BigInt(data[offset]) |
+                           (BigInt(data[offset + 1]) << BigInt(8)) |
+                           (BigInt(data[offset + 2]) << BigInt(16)) |
+                           (BigInt(data[offset + 3]) << BigInt(24)) |
+                           (BigInt(data[offset + 4]) << BigInt(32)) |
+                           (BigInt(data[offset + 5]) << BigInt(40)) |
+                           (BigInt(data[offset + 6]) << BigInt(48)) |
+                           (BigInt(data[offset + 7]) << BigInt(56));
+      offset += 8;
+
+      // timestamp (8 bytes i64 LE)
+      const timestamp = BigInt(data[offset]) |
+                       (BigInt(data[offset + 1]) << BigInt(8)) |
+                       (BigInt(data[offset + 2]) << BigInt(16)) |
+                       (BigInt(data[offset + 3]) << BigInt(24)) |
+                       (BigInt(data[offset + 4]) << BigInt(32)) |
+                       (BigInt(data[offset + 5]) << BigInt(40)) |
+                       (BigInt(data[offset + 6]) << BigInt(48)) |
+                       (BigInt(data[offset + 7]) << BigInt(56));
+
+      return {
+        channel,
+        sender,
+        messageHash,
+        encryptedIpfsCid,
+        messageNumber,
+        timestamp,
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export interface ChatMessage {
+  id: string;
+  content: string;
+  sender: string;
+  timestamp: string;
+  txSignature?: string;
+}
+
+/**
+ * Extract CID from transaction instruction data
+ * The logMessage instruction format:
+ * - 8 bytes: Anchor discriminator
+ * - 32 bytes: message_hash [u8; 32]
+ * - 4 bytes: length of encrypted_ipfs_cid (Vec length prefix, little-endian)
+ * - N bytes: encrypted_ipfs_cid data
+ */
+function extractCidFromTx(tx: VersionedTransactionResponse): string | null {
+  try {
+    const message = tx.transaction.message;
+    const accountKeys = message.staticAccountKeys;
+    const programIdStr = PROGRAM_ID.toString();
+
+    // For versioned transactions, use compiledInstructions
+    if ("compiledInstructions" in message) {
+      for (const ix of message.compiledInstructions) {
+        const programId = accountKeys[ix.programIdIndex]?.toString();
+        if (programId !== programIdStr) continue;
+
+        const data = ix.data;
+        if (data.length > 44) { // 8 + 32 + 4 = 44 minimum
+          // Skip discriminator (8) and hash (32)
+          const cidLengthOffset = 40;
+          const cidLength = data[cidLengthOffset] |
+                           (data[cidLengthOffset + 1] << 8) |
+                           (data[cidLengthOffset + 2] << 16) |
+                           (data[cidLengthOffset + 3] << 24);
+
+          if (cidLength > 0 && cidLength < 500) {
+            const cidStart = cidLengthOffset + 4;
+            const cidEnd = cidStart + cidLength;
+            if (cidEnd <= data.length) {
+              const cidBytes = data.slice(cidStart, cidEnd);
+              const cid = new TextDecoder().decode(cidBytes);
+              // Validate it looks like a CID
+              if (cid.startsWith("data:") || cid.startsWith("Qm") || cid.startsWith("bafy") || /^[a-zA-Z0-9_]+/.test(cid)) {
+                return cid;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hook for managing channel messages
+ * Fetches messages from on-chain events and IPFS
+ */
+export function useMessages(channelPda: PublicKey | null) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isFetchingRef = useRef(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  /**
+   * Fetch messages for a channel by parsing transaction logs
+   * @param isBackgroundRefresh - If true, don't show loading state (keeps messages visible)
+   */
+  const fetchChannelMessages = useCallback(async (isBackgroundRefresh = false) => {
+    if (!channelPda) {
+      return [];
+    }
+
+    // Prevent concurrent fetches
+    if (isFetchingRef.current) {
+      return [];
+    }
+
+    isFetchingRef.current = true;
+    // Only show loading spinner on initial load, not background refreshes
+    if (!isBackgroundRefresh) {
+      setLoading(true);
+    }
+    setError(null);
+
+    try {
+      const connection = new Connection(RPC_ENDPOINT, {
+        commitment: "confirmed",
+        confirmTransactionInitialTimeout: 30000,
+      });
+
+      // Get recent signatures for the channel account
+      let signatures;
+      try {
+        signatures = await connection.getSignaturesForAddress(
+          channelPda,
+          { limit: 50 },
+          "confirmed"
+        );
+      } catch (sigErr) {
+        throw sigErr;
+      }
+
+      if (signatures.length === 0) {
+        setMessages([]);
+        return [];
+      }
+
+      // Fetch transaction details in parallel batches
+      const BATCH_SIZE = 5;
+      const txs: (VersionedTransactionResponse | null)[] = [];
+
+      for (let i = 0; i < signatures.length; i += BATCH_SIZE) {
+        const batch = signatures.slice(i, i + BATCH_SIZE);
+
+        const batchResults = await Promise.all(
+          batch.map(async (sig) => {
+            try {
+              const tx = await connection.getTransaction(sig.signature, {
+                maxSupportedTransactionVersion: 0,
+              });
+              return tx;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        txs.push(...batchResults);
+      }
+
+      const parsedMessages: ChatMessage[] = [];
+
+      for (const tx of txs) {
+        if (!tx || !tx.meta || !tx.meta.logMessages) {
+          continue;
+        }
+
+        const logs = tx.meta.logMessages;
+
+        // Try to parse MessageLogged event from logs (primary method)
+        const event = parseMessageLoggedEvent(logs);
+
+        if (event) {
+          const txTimestamp = new Date(
+            Number(event.timestamp) * 1000
+          ).toISOString();
+
+          let content = `Message #${event.messageNumber.toString()}`;
+
+          // Fetch content from IPFS using the CID from the event
+          if (event.encryptedIpfsCid) {
+            try {
+              const ipfsMessage = await fetchMessage(event.encryptedIpfsCid);
+              if (ipfsMessage) {
+                content = ipfsMessage.content;
+              }
+            } catch {
+              // IPFS fetch failed, use default content
+            }
+          }
+
+          parsedMessages.push({
+            id: `${tx.transaction.signatures[0]}-${event.messageNumber.toString()}`,
+            content,
+            sender: event.sender.toString().slice(0, 8),
+            timestamp: txTimestamp,
+            txSignature: tx.transaction.signatures[0],
+          });
+        } else {
+          // Fallback: Look for MessageLogged text in logs
+          const programLog = logs.find(log =>
+            log.includes("Program log: Message logged:")
+          );
+
+          if (programLog) {
+            const match = programLog.match(/Message logged: #(\d+)/);
+            const messageNumber = match ? match[1] : "0";
+
+            const accountKeys = tx.transaction.message.staticAccountKeys;
+            const sender = accountKeys[0]?.toString().slice(0, 8) || "Unknown";
+            const txTimestamp = new Date(
+              (tx.blockTime || Date.now() / 1000) * 1000
+            ).toISOString();
+
+            // Try to extract CID from instruction data (fallback)
+            const cid = extractCidFromTx(tx);
+            let content = `Message #${messageNumber}`;
+
+            if (cid) {
+              try {
+                const ipfsMessage = await fetchMessage(cid);
+                if (ipfsMessage) {
+                  content = ipfsMessage.content;
+                }
+              } catch {
+                // IPFS fetch failed, use default content
+              }
+            }
+
+            parsedMessages.push({
+              id: `${tx.transaction.signatures[0]}-${messageNumber}`,
+              content,
+              sender,
+              timestamp: txTimestamp,
+              txSignature: tx.transaction.signatures[0],
+            });
+          }
+        }
+      }
+
+      // Sort by timestamp (oldest first)
+      parsedMessages.sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+
+      setMessages(parsedMessages);
+      return parsedMessages;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to fetch messages";
+      setError(message);
+      return [];
+    } finally {
+      setLoading(false);
+      isFetchingRef.current = false;
+    }
+  }, [channelPda]);
+
+  /**
+   * Add a new message locally (optimistic update)
+   * The actual message is stored on IPFS and logged on-chain separately
+   */
+  const addLocalMessage = useCallback(
+    async (content: string, sender: string, channelId: string) => {
+      const ipfsMessage: IPFSMessage = {
+        content,
+        sender,
+        timestamp: Date.now(),
+        channelId,
+      };
+
+      // Upload to IPFS (or use demo storage)
+      const cid = await uploadMessage(ipfsMessage);
+
+      // Create local message for immediate display
+      const newMessage: ChatMessage = {
+        id: Date.now().toString(),
+        content,
+        sender: sender.slice(0, 8),
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages(prev => [...prev, newMessage]);
+
+      return cid;
+    },
+    []
+  );
+
+  /**
+   * Clear messages (for cleanup)
+   */
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+  }, []);
+
+  // Store fetchChannelMessages in a ref so polling doesn't depend on it
+  const fetchMessagesRef = useRef(fetchChannelMessages);
+  fetchMessagesRef.current = fetchChannelMessages;
+
+  /**
+   * Start polling for new messages every 3 seconds
+   */
+  const startPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    pollingIntervalRef.current = setInterval(() => {
+      fetchMessagesRef.current(true);
+    }, 3000);
+  }, []);
+
+  /**
+   * Stop polling for messages
+   */
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  return {
+    messages,
+    loading,
+    error,
+    fetchChannelMessages,
+    addLocalMessage,
+    clearMessages,
+    startPolling,
+    stopPolling,
+  };
+}
+
+export default useMessages;
