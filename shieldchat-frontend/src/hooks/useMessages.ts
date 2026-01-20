@@ -124,6 +124,45 @@ export interface ChatMessage {
 }
 
 /**
+ * Extract CID from raw instruction data (from Helius WebSocket)
+ * The logMessage instruction format:
+ * - 8 bytes: Anchor discriminator
+ * - 32 bytes: message_hash [u8; 32]
+ * - 4 bytes: length of encrypted_ipfs_cid (Vec length prefix, little-endian)
+ * - N bytes: encrypted_ipfs_cid data
+ */
+export function extractCidFromInstructionData(data: Uint8Array): string | null {
+  try {
+    if (data.length < 44) return null; // 8 + 32 + 4 = 44 minimum
+
+    // Skip discriminator (8) and hash (32)
+    const cidLengthOffset = 40;
+    const cidLength = data[cidLengthOffset] |
+                     (data[cidLengthOffset + 1] << 8) |
+                     (data[cidLengthOffset + 2] << 16) |
+                     (data[cidLengthOffset + 3] << 24);
+
+    if (cidLength <= 0 || cidLength > 500) return null;
+
+    const cidStart = cidLengthOffset + 4;
+    const cidEnd = cidStart + cidLength;
+    if (cidEnd > data.length) return null;
+
+    const cidBytes = data.slice(cidStart, cidEnd);
+    const cid = new TextDecoder().decode(cidBytes);
+
+    // Validate it looks like a CID
+    if (cid.startsWith("data:") || cid.startsWith("Qm") || cid.startsWith("bafy") || /^[a-zA-Z0-9_]+/.test(cid)) {
+      return cid;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Extract CID from transaction instruction data
  * The logMessage instruction format:
  * - 8 bytes: Anchor discriminator
@@ -426,6 +465,85 @@ export function useMessages(channelPda: PublicKey | null) {
     setMessages([]);
   }, []);
 
+  /**
+   * Add a single message from Helius WebSocket notification
+   * This is faster than re-fetching all messages
+   */
+  const addMessageFromHelius = useCallback(
+    async (
+      instructionData: Uint8Array | null,
+      sender: string | null,
+      signature: string,
+      timestamp: number
+    ): Promise<boolean> => {
+      if (!instructionData || !channelPda) {
+        console.log("[useMessages] No instruction data or channelPda, skipping");
+        return false;
+      }
+
+      // Extract CID from instruction data
+      const cid = extractCidFromInstructionData(instructionData);
+      if (!cid) {
+        console.log("[useMessages] Could not extract CID from instruction data");
+        return false;
+      }
+
+      console.log("[useMessages] Extracted CID from Helius:", cid.slice(0, 20) + "...");
+
+      try {
+        // Fetch message from IPFS
+        const ipfsMessage = await fetchMessage(cid);
+        if (!ipfsMessage) {
+          console.log("[useMessages] Could not fetch message from IPFS");
+          return false;
+        }
+
+        let content = ipfsMessage.content;
+
+        // Decrypt if encrypted
+        if (ipfsMessage.encrypted && ipfsMessage.encryptedData) {
+          try {
+            content = await decryptMessage(ipfsMessage.encryptedData, channelPda.toString());
+            console.log("[useMessages] Decrypted message from Helius");
+          } catch (decryptErr) {
+            console.error("[useMessages] Failed to decrypt:", decryptErr);
+            content = "[Encrypted message - decryption failed]";
+          }
+        }
+
+        // Create the message object
+        const newMessage: ChatMessage = {
+          id: `${signature}-helius`,
+          content,
+          sender: sender?.slice(0, 8) || "Unknown",
+          timestamp: new Date(timestamp * 1000).toISOString(),
+          txSignature: signature,
+        };
+
+        // Add to messages if not already present (avoid duplicates)
+        setMessages(prev => {
+          // Check if message already exists
+          const exists = prev.some(m =>
+            m.txSignature === signature ||
+            (m.content === content && m.sender === newMessage.sender)
+          );
+          if (exists) {
+            console.log("[useMessages] Message already exists, skipping");
+            return prev;
+          }
+          console.log("[useMessages] Added message from Helius:", content.slice(0, 30) + "...");
+          return [...prev, newMessage];
+        });
+
+        return true;
+      } catch (err) {
+        console.error("[useMessages] Error adding message from Helius:", err);
+        return false;
+      }
+    },
+    [channelPda]
+  );
+
   // Store fetchChannelMessages in a ref so polling doesn't depend on it
   const fetchMessagesRef = useRef(fetchChannelMessages);
   fetchMessagesRef.current = fetchChannelMessages;
@@ -459,6 +577,7 @@ export function useMessages(channelPda: PublicKey | null) {
     error,
     fetchChannelMessages,
     addLocalMessage,
+    addMessageFromHelius,
     clearMessages,
     startPolling,
     stopPolling,

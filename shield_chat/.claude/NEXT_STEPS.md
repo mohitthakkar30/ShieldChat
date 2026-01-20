@@ -48,6 +48,26 @@ Decentralized message persistence:
 - `shieldchat-frontend/src/lib/ipfs.ts` - IPFS client
 - `shieldchat-frontend/src/hooks/useMessages.ts` - Message handling
 
+### ✅ Phase 5.2: Helius Real-Time Monitoring (COMPLETED)
+
+Real-time message delivery via Helius Enhanced WebSockets:
+- `transactionSubscribe` method for instant updates
+- Monitors ShieldChat program transactions
+- Automatic reconnection with exponential backoff
+- Ping keepalive (30-second intervals)
+- Fallback to 3-second polling when API key not configured
+
+**Key Files:**
+- `shieldchat-frontend/src/lib/helius.ts` - WebSocket client
+- `shieldchat-frontend/src/hooks/useHelius.ts` - React hook
+- `shieldchat-frontend/src/app/app/channels/[id]/page.tsx` - Integration
+
+**Features:**
+- Green "Real-time" indicator when connected
+- Yellow "Connecting..." during connection
+- Gray "Polling" when falling back to polling
+- Instant message delivery (< 1 second)
+
 ## Future Phases
 
 ### 🚧 Phase 4: ShadowWire Payment Attachments

@@ -91,11 +91,10 @@ pub struct Member {
 - **Wallet**: Solana Wallet Adapter (Phantom, Solflare, Backpack)
 - **Encryption**: Arcium SDK (`@arcium-hq/client`) with RescueCipher + x25519
 - **Storage**: IPFS via Pinata for encrypted message content
-- **Real-Time**: Background polling (3-second refresh)
+- **Real-Time**: Helius Enhanced WebSockets for instant message delivery (with polling fallback)
 
 ### Planned Integrations (Phase 4+)
 - **Payments**: ShadowWire for private payment attachments
-- **Monitoring**: Helius webhooks for real-time event tracking (optional)
 
 ## Bounty Alignment
 
@@ -114,10 +113,10 @@ ShieldChat targets **$53,000** across 5 hackathon bounties:
 - **Status**: Smart contract ready, ShadowWire integration pending
 
 ### 3. Helius Real-Time Monitoring ($5,000)
-- Webhook integration for MessageLogged events
-- Real-time message delivery notifications
-- Transaction confirmation tracking
-- **Status**: ⏳ Partial - Background polling implemented, webhooks optional
+- Enhanced WebSocket integration for MessageLogged events
+- Real-time message delivery notifications via `transactionSubscribe`
+- Instant message updates without polling
+- **Status**: ✅ COMPLETED - Full Helius Enhanced WebSockets integration
 
 ### 4. MagicBlock Zero-Fee Messaging ($5,000)
 - Programmable Ephemeral Rollups (PER) integration

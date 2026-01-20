@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { PublicKey } from "@solana/web3.js";
 import { useShieldChat, Channel, Member } from "@/hooks/useShieldChat";
 import { useMessages, ChatMessage } from "@/hooks/useMessages";
+import { useHelius } from "@/hooks/useHelius";
+import { HeliusMessage } from "@/lib/helius";
 import { parseChannelType } from "@/lib/anchor";
 
 export default function ChannelPage() {
@@ -35,9 +37,39 @@ export default function ChannelPage() {
     loading: messagesLoading,
     fetchChannelMessages,
     addLocalMessage,
+    addMessageFromHelius,
     startPolling,
     stopPolling,
   } = useMessages(channelPda);
+
+  // Helius real-time monitoring - callback for when new messages are detected
+  // Uses direct extraction from Helius payload for faster message display
+  const handleNewMessage = useCallback(async (heliusMessage: HeliusMessage) => {
+    console.log("[Channel] Helius detected new message, extracting directly...");
+
+    // Try to extract and display message directly from Helius payload
+    const added = await addMessageFromHelius(
+      heliusMessage.instructionData,
+      heliusMessage.sender,
+      heliusMessage.signature,
+      heliusMessage.timestamp
+    );
+
+    if (!added) {
+      // Fallback to full refresh if direct extraction failed
+      console.log("[Channel] Direct extraction failed, falling back to refresh");
+      fetchChannelMessages(true);
+    }
+  }, [addMessageFromHelius, fetchChannelMessages]);
+
+  const {
+    connected: heliusConnected,
+    isAvailable: heliusAvailable,
+  } = useHelius({
+    channelPda,
+    onNewMessage: handleNewMessage,
+    enabled: true,
+  });
 
   const [channel, setChannel] = useState<Channel | null>(null);
   const [membership, setMembership] = useState<Member | null>(null);
@@ -61,16 +93,30 @@ export default function ChannelPage() {
     }
   }, [channelId, channelPda, fetchChannelMessages]);
 
-  // Start/stop polling separately to avoid dependency issues
+  // Start/stop polling based on Helius connection status
+  // If Helius is connected, we don't need fast polling (rely on WebSocket)
+  // If Helius is not available, use 3-second polling as fallback
   useEffect(() => {
-    if (channelId && channelPda) {
+    if (!channelId || !channelPda) {
+      stopPolling();
+      return;
+    }
+
+    if (heliusConnected) {
+      // Helius connected - stop fast polling, use WebSocket for real-time updates
+      // Optional: Could keep slow polling (30s) as backup
+      console.log("[Channel] Helius connected, stopping fast polling");
+      stopPolling();
+    } else {
+      // No Helius - use fast polling (3s)
+      console.log("[Channel] No Helius connection, using 3s polling");
       startPolling();
     }
 
     return () => {
       stopPolling();
     };
-  }, [channelId, channelPda, startPolling, stopPolling]);
+  }, [channelId, channelPda, heliusConnected, startPolling, stopPolling]);
 
   // Reset fetch flag when channel changes
   useEffect(() => {
@@ -290,9 +336,22 @@ export default function ChannelPage() {
                 <div className="mt-2 text-sm text-red-400">{error}</div>
               )}
 
-              <p className="mt-2 text-xs text-gray-500">
-                Messages are logged on-chain and stored via IPFS for persistence.
-              </p>
+              <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                <p>Messages are encrypted with Arcium and stored on IPFS.</p>
+                <div className="flex items-center space-x-2">
+                  {heliusAvailable ? (
+                    <span className={`flex items-center ${heliusConnected ? 'text-green-400' : 'text-yellow-400'}`}>
+                      <span className={`w-2 h-2 rounded-full mr-1 ${heliusConnected ? 'bg-green-400' : 'bg-yellow-400'}`}></span>
+                      {heliusConnected ? 'Real-time' : 'Connecting...'}
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-gray-500">
+                      <span className="w-2 h-2 rounded-full mr-1 bg-gray-500"></span>
+                      Polling
+                    </span>
+                  )}
+                </div>
+              </div>
             </>
           ) : (
             <div className="text-center py-2">
