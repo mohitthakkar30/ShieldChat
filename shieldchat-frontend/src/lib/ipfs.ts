@@ -7,6 +7,7 @@
  */
 
 import { EncryptedData } from "./arcium";
+import { PaymentAttachment } from "./shadowwire";
 
 // Public IPFS gateways for fetching content
 const IPFS_GATEWAYS = [
@@ -23,6 +24,7 @@ export interface IPFSMessage {
   channelId: string;
   encrypted?: boolean; // Flag indicating if content is encrypted
   encryptedData?: EncryptedData; // Structured encrypted content (optional)
+  payment?: PaymentAttachment; // Optional private payment attachment
 }
 
 /**

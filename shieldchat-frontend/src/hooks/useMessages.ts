@@ -9,6 +9,7 @@ import {
   decryptMessage,
   EncryptedData,
 } from "@/lib/arcium";
+import { PaymentAttachment } from "@/lib/shadowwire";
 
 // MessageLogged event discriminator from IDL
 const MESSAGE_LOGGED_DISCRIMINATOR = [24, 236, 247, 207, 227, 70, 101, 210];
@@ -121,6 +122,7 @@ export interface ChatMessage {
   sender: string;
   timestamp: string;
   txSignature?: string;
+  payment?: PaymentAttachment;
 }
 
 /**
@@ -309,12 +311,16 @@ export function useMessages(channelPda: PublicKey | null) {
           ).toISOString();
 
           let content = `Message #${event.messageNumber.toString()}`;
+          let payment: PaymentAttachment | undefined;
 
           // Fetch content from IPFS using the CID from the event
           if (event.encryptedIpfsCid) {
             try {
               const ipfsMessage = await fetchMessage(event.encryptedIpfsCid);
               if (ipfsMessage) {
+                // Extract payment attachment if present
+                payment = ipfsMessage.payment;
+
                 // Check if message is encrypted and decrypt it
                 if (ipfsMessage.encrypted && ipfsMessage.encryptedData && channelPda) {
                   try {
@@ -339,6 +345,7 @@ export function useMessages(channelPda: PublicKey | null) {
             sender: event.sender.toString().slice(0, 8),
             timestamp: txTimestamp,
             txSignature: tx.transaction.signatures[0],
+            payment,
           });
         } else {
           // Fallback: Look for MessageLogged text in logs
@@ -359,11 +366,15 @@ export function useMessages(channelPda: PublicKey | null) {
             // Try to extract CID from instruction data (fallback)
             const cid = extractCidFromTx(tx);
             let content = `Message #${messageNumber}`;
+            let payment: PaymentAttachment | undefined;
 
             if (cid) {
               try {
                 const ipfsMessage = await fetchMessage(cid);
                 if (ipfsMessage) {
+                  // Extract payment attachment if present
+                  payment = ipfsMessage.payment;
+
                   // Check if message is encrypted and decrypt it
                   if (ipfsMessage.encrypted && ipfsMessage.encryptedData && channelPda) {
                     try {
@@ -388,6 +399,7 @@ export function useMessages(channelPda: PublicKey | null) {
               sender,
               timestamp: txTimestamp,
               txSignature: tx.transaction.signatures[0],
+              payment,
             });
           }
         }
@@ -413,9 +425,15 @@ export function useMessages(channelPda: PublicKey | null) {
   /**
    * Add a new message locally (optimistic update)
    * The actual message is stored encrypted on IPFS and logged on-chain separately
+   * Optionally includes a payment attachment
    */
   const addLocalMessage = useCallback(
-    async (content: string, sender: string, channelId: string) => {
+    async (
+      content: string,
+      sender: string,
+      channelId: string,
+      payment?: PaymentAttachment
+    ) => {
       // Encrypt the message content before storing
       let encryptedData: EncryptedData | undefined;
       let isEncrypted = false;
@@ -438,6 +456,7 @@ export function useMessages(channelPda: PublicKey | null) {
         channelId,
         encrypted: isEncrypted,
         encryptedData: encryptedData,
+        payment: payment, // Include payment attachment if present
       };
 
       // Upload to IPFS (or use demo storage)
@@ -449,6 +468,7 @@ export function useMessages(channelPda: PublicKey | null) {
         content, // Show original content locally
         sender: sender.slice(0, 8),
         timestamp: new Date().toISOString(),
+        payment: payment, // Include payment for local display
       };
 
       setMessages(prev => [...prev, newMessage]);
@@ -518,6 +538,7 @@ export function useMessages(channelPda: PublicKey | null) {
           sender: sender?.slice(0, 8) || "Unknown",
           timestamp: new Date(timestamp * 1000).toISOString(),
           txSignature: signature,
+          payment: ipfsMessage.payment, // Include payment attachment if present
         };
 
         // Add to messages if not already present (avoid duplicates)

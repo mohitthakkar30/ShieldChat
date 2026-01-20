@@ -6,8 +6,15 @@ import { PublicKey } from "@solana/web3.js";
 import { useShieldChat, Channel, Member } from "@/hooks/useShieldChat";
 import { useMessages, ChatMessage } from "@/hooks/useMessages";
 import { useHelius } from "@/hooks/useHelius";
+import { usePayments } from "@/hooks/usePayments";
 import { HeliusMessage } from "@/lib/helius";
 import { parseChannelType } from "@/lib/anchor";
+import { PaymentModal } from "@/components/PaymentModal";
+import {
+  PaymentAttachment,
+  formatAmount,
+  getSolscanUrl,
+} from "@/lib/shadowwire";
 
 export default function ChannelPage() {
   const params = useParams();
@@ -77,6 +84,16 @@ export default function ChannelPage() {
   const [sending, setSending] = useState(false);
   const [joining, setJoining] = useState(false);
   const hasFetchedMessages = useRef(false);
+
+  // Payment state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const {
+    pendingPayment,
+    setPendingPayment,
+    executePayment,
+    loading: paymentLoading,
+    error: paymentError,
+  } = usePayments();
 
   // Load channel data
   useEffect(() => {
@@ -164,17 +181,35 @@ export default function ChannelPage() {
 
     setSending(true);
     try {
+      // Execute payment if attached
+      let paymentData: PaymentAttachment | undefined;
+      if (pendingPayment) {
+        console.log("[Channel] Executing attached payment...");
+        const result = await executePayment();
+        if (result) {
+          paymentData = result;
+          console.log("[Channel] Payment successful:", result.txSignature);
+        } else {
+          // Payment failed, don't send message
+          console.error("[Channel] Payment failed, aborting message");
+          setSending(false);
+          return;
+        }
+      }
+
       // Add message locally for immediate feedback and get the CID
       const cid = await addLocalMessage(
         newMessage.trim(),
         publicKey.toString(),
-        channelId
+        channelId,
+        paymentData
       );
 
       // Log message on-chain with the IPFS CID
       await logMessage(channel.publicKey, newMessage.trim(), cid);
 
       setNewMessage("");
+      setPendingPayment(null); // Clear payment after sending
       await loadChannelData(); // Refresh message count
 
       // Refresh messages from chain after a delay
@@ -314,26 +349,63 @@ export default function ChannelPage() {
         <div className="bg-gray-800/50 border-t border-gray-700 p-4">
           {isMember ? (
             <>
-              <form onSubmit={handleSendMessage} className="flex space-x-4">
+              {/* Pending Payment Preview */}
+              {pendingPayment && (
+                <div className="mb-3 bg-purple-900/30 border border-purple-500/50 rounded-lg p-3 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-purple-400">💰</span>
+                    <span className="text-sm">
+                      Sending {formatAmount(pendingPayment.amount, pendingPayment.token)}{" "}
+                      {pendingPayment.token} to {pendingPayment.recipient.slice(0, 8)}...
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      ({pendingPayment.type})
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setPendingPayment(null)}
+                    className="text-gray-400 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              <form onSubmit={handleSendMessage} className="flex space-x-2">
+                {/* Attach Payment Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentModal(true)}
+                  disabled={sending || paymentLoading}
+                  className={`px-3 rounded-lg transition-colors ${
+                    pendingPayment
+                      ? "bg-purple-600 text-white"
+                      : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+                  }`}
+                  title="Attach payment"
+                >
+                  💰
+                </button>
+
                 <input
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Type a message..."
                   className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
-                  disabled={sending}
+                  disabled={sending || paymentLoading}
                 />
                 <button
                   type="submit"
-                  disabled={sending || !newMessage.trim()}
+                  disabled={sending || paymentLoading || !newMessage.trim()}
                   className="bg-purple-600 hover:bg-purple-700 text-white px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {sending ? "..." : "Send"}
+                  {sending || paymentLoading ? "..." : "Send"}
                 </button>
               </form>
 
-              {error && (
-                <div className="mt-2 text-sm text-red-400">{error}</div>
+              {(error || paymentError) && (
+                <div className="mt-2 text-sm text-red-400">{error || paymentError}</div>
               )}
 
               <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
@@ -369,6 +441,16 @@ export default function ChannelPage() {
           )}
         </div>
       )}
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        onConfirm={(payment) => {
+          setPendingPayment(payment);
+          setShowPaymentModal(false);
+        }}
+      />
     </div>
   );
 }
@@ -388,6 +470,49 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </span>
         </div>
         <p className="text-gray-300 mt-1">{message.content}</p>
+
+        {/* Payment Attachment Display */}
+        {message.payment && (
+          <div className="mt-2 bg-purple-900/30 border border-purple-500/50 rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="text-purple-400">💰</span>
+                <span className="text-sm font-medium">
+                  Private Payment
+                </span>
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded ${
+                message.payment.status === "completed"
+                  ? "bg-green-500/20 text-green-400"
+                  : message.payment.status === "pending"
+                  ? "bg-yellow-500/20 text-yellow-400"
+                  : "bg-red-500/20 text-red-400"
+              }`}>
+                {message.payment.status}
+              </span>
+            </div>
+            <div className="mt-2 text-sm">
+              <span className="text-gray-400">
+                {formatAmount(message.payment.amount, message.payment.token)}{" "}
+                {message.payment.token}
+              </span>
+              <span className="text-gray-500 mx-2">→</span>
+              <span className="text-gray-400 font-mono">
+                {message.payment.recipient.slice(0, 8)}...
+              </span>
+            </div>
+            {message.payment.txSignature && (
+              <a
+                href={getSolscanUrl(message.payment.txSignature)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block text-xs text-purple-400 hover:text-purple-300"
+              >
+                View Transaction ↗
+              </a>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
