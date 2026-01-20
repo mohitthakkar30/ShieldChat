@@ -3,7 +3,10 @@
  *
  * Uses Pinata for decentralized message storage.
  * Falls back to demo mode (base64 encoding) if Pinata is not configured.
+ * Supports encrypted content via Arcium-style encryption.
  */
+
+import { EncryptedData } from "./arcium";
 
 // Public IPFS gateways for fetching content
 const IPFS_GATEWAYS = [
@@ -14,10 +17,12 @@ const IPFS_GATEWAYS = [
 ];
 
 export interface IPFSMessage {
-  content: string;
+  content: string; // Plaintext or JSON-serialized EncryptedData
   sender: string;
   timestamp: number;
   channelId: string;
+  encrypted?: boolean; // Flag indicating if content is encrypted
+  encryptedData?: EncryptedData; // Structured encrypted content (optional)
 }
 
 /**

@@ -4,6 +4,11 @@ import { useCallback, useState, useRef } from "react";
 import { PublicKey, Connection, VersionedTransactionResponse } from "@solana/web3.js";
 import { fetchMessage, IPFSMessage, uploadMessage } from "@/lib/ipfs";
 import { RPC_ENDPOINT, PROGRAM_ID } from "@/lib/constants";
+import {
+  encryptMessage,
+  decryptMessage,
+  EncryptedData,
+} from "@/lib/arcium";
 
 // MessageLogged event discriminator from IDL
 const MESSAGE_LOGGED_DISCRIMINATOR = [24, 236, 247, 207, 227, 70, 101, 210];
@@ -271,7 +276,18 @@ export function useMessages(channelPda: PublicKey | null) {
             try {
               const ipfsMessage = await fetchMessage(event.encryptedIpfsCid);
               if (ipfsMessage) {
-                content = ipfsMessage.content;
+                // Check if message is encrypted and decrypt it
+                if (ipfsMessage.encrypted && ipfsMessage.encryptedData && channelPda) {
+                  try {
+                    // Pass channelPda string directly - Arcium SDK derives keys internally
+                    content = await decryptMessage(ipfsMessage.encryptedData, channelPda.toString());
+                  } catch (decryptErr) {
+                    console.error("Failed to decrypt message:", decryptErr);
+                    content = "[Encrypted message - decryption failed]";
+                  }
+                } else {
+                  content = ipfsMessage.content;
+                }
               }
             } catch {
               // IPFS fetch failed, use default content
@@ -309,7 +325,18 @@ export function useMessages(channelPda: PublicKey | null) {
               try {
                 const ipfsMessage = await fetchMessage(cid);
                 if (ipfsMessage) {
-                  content = ipfsMessage.content;
+                  // Check if message is encrypted and decrypt it
+                  if (ipfsMessage.encrypted && ipfsMessage.encryptedData && channelPda) {
+                    try {
+                      // Pass channelPda string directly - Arcium SDK derives keys internally
+                      content = await decryptMessage(ipfsMessage.encryptedData, channelPda.toString());
+                    } catch (decryptErr) {
+                      console.error("Failed to decrypt message:", decryptErr);
+                      content = "[Encrypted message - decryption failed]";
+                    }
+                  } else {
+                    content = ipfsMessage.content;
+                  }
                 }
               } catch {
                 // IPFS fetch failed, use default content
@@ -346,24 +373,41 @@ export function useMessages(channelPda: PublicKey | null) {
 
   /**
    * Add a new message locally (optimistic update)
-   * The actual message is stored on IPFS and logged on-chain separately
+   * The actual message is stored encrypted on IPFS and logged on-chain separately
    */
   const addLocalMessage = useCallback(
     async (content: string, sender: string, channelId: string) => {
+      // Encrypt the message content before storing
+      let encryptedData: EncryptedData | undefined;
+      let isEncrypted = false;
+
+      if (channelPda) {
+        try {
+          // Pass channelPda string directly - Arcium SDK derives keys internally
+          encryptedData = await encryptMessage(content, channelPda.toString());
+          isEncrypted = true;
+          console.log("Message encrypted successfully with Arcium RescueCipher");
+        } catch (err) {
+          console.error("Encryption failed, storing unencrypted:", err);
+        }
+      }
+
       const ipfsMessage: IPFSMessage = {
-        content,
+        content: isEncrypted ? "[Encrypted]" : content, // Placeholder for encrypted
         sender,
         timestamp: Date.now(),
         channelId,
+        encrypted: isEncrypted,
+        encryptedData: encryptedData,
       };
 
       // Upload to IPFS (or use demo storage)
       const cid = await uploadMessage(ipfsMessage);
 
-      // Create local message for immediate display
+      // Create local message for immediate display (show original content)
       const newMessage: ChatMessage = {
         id: Date.now().toString(),
-        content,
+        content, // Show original content locally
         sender: sender.slice(0, 8),
         timestamp: new Date().toISOString(),
       };
@@ -372,7 +416,7 @@ export function useMessages(channelPda: PublicKey | null) {
 
       return cid;
     },
-    []
+    [channelPda]
   );
 
   /**
