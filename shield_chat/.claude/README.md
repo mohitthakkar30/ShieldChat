@@ -115,8 +115,9 @@ ShieldChat targets **$53,000** across 5 hackathon bounties:
 ### 3. Helius Real-Time Monitoring ($5,000)
 - Enhanced WebSocket integration for MessageLogged events
 - Real-time message delivery notifications via `transactionSubscribe`
+- Direct CID extraction from instruction data (optimized, no full re-fetch)
 - Instant message updates without polling
-- **Status**: ✅ COMPLETED - Full Helius Enhanced WebSockets integration
+- **Status**: ✅ COMPLETED - Full Helius Enhanced WebSockets integration with direct extraction optimization
 
 ### 4. MagicBlock Zero-Fee Messaging ($5,000)
 - Programmable Ephemeral Rollups (PER) integration

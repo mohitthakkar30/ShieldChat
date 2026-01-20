@@ -386,14 +386,25 @@ pub struct MessageLogged {
 - Provides off-chain indexing for message history
 - Includes all necessary data for notification systems
 
-**Monitoring Setup** (Future):
+**Real-Time Monitoring** (Implemented):
 ```typescript
-// Helius webhook configuration
+// Helius Enhanced WebSockets - transactionSubscribe
 {
-  "accountAddresses": ["FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN"],
-  "transactionTypes": ["ANY"],
-  "webhookURL": "https://api.yourapp.com/helius-webhook"
+  "method": "transactionSubscribe",
+  "params": [{
+    "accountInclude": ["FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN"]
+  }, {
+    "commitment": "confirmed",
+    "encoding": "jsonParsed",
+    "transactionDetails": "full"
+  }]
 }
+
+// Direct CID extraction from instruction data for instant display:
+// - 8 bytes: Anchor discriminator (skip)
+// - 32 bytes: message_hash (skip)
+// - 4 bytes: Vec length prefix (little-endian)
+// - N bytes: encrypted_ipfs_cid data
 ```
 
 ## Error Codes
@@ -550,4 +561,9 @@ seeds: ["member", channel_pubkey, wallet_pubkey]
 
 ---
 
-**Implementation Status**: Smart contract complete and deployed to devnet. Frontend and encryption integrations in progress.
+**Implementation Status**:
+- ✅ Smart contract complete and deployed to devnet
+- ✅ Frontend complete (Next.js 15 with wallet integration)
+- ✅ Arcium encryption integration complete (RescueCipher + x25519)
+- ✅ IPFS storage complete (Pinata with demo mode fallback)
+- ✅ Helius real-time monitoring complete (Enhanced WebSockets with direct CID extraction)

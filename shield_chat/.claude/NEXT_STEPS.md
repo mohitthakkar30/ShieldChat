@@ -58,8 +58,9 @@ Real-time message delivery via Helius Enhanced WebSockets:
 - Fallback to 3-second polling when API key not configured
 
 **Key Files:**
-- `shieldchat-frontend/src/lib/helius.ts` - WebSocket client
-- `shieldchat-frontend/src/hooks/useHelius.ts` - React hook
+- `shieldchat-frontend/src/lib/helius.ts` - WebSocket client with instruction data extraction
+- `shieldchat-frontend/src/hooks/useHelius.ts` - React hook with full message payload
+- `shieldchat-frontend/src/hooks/useMessages.ts` - Direct CID extraction and single message fetch
 - `shieldchat-frontend/src/app/app/channels/[id]/page.tsx` - Integration
 
 **Features:**
@@ -67,6 +68,13 @@ Real-time message delivery via Helius Enhanced WebSockets:
 - Yellow "Connecting..." during connection
 - Gray "Polling" when falling back to polling
 - Instant message delivery (< 1 second)
+
+**Optimization (Direct Extraction):**
+- Extracts CID directly from Helius WebSocket instruction data
+- Fetches only the single new message from IPFS (not all messages)
+- Base58 decoder for instruction data parsing
+- Falls back to full refresh if direct extraction fails
+- Duplicate detection to prevent showing same message twice
 
 ## Future Phases
 
