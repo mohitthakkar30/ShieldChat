@@ -86,23 +86,26 @@ pub struct Member {
 - **Testing**: TypeScript with Mocha/Chai
 - **Build Tool**: Anchor CLI
 
-### Planned Integrations (Phase 2-7)
-- **Encryption**: Arcium MPC for multi-party computation encryption
+### Implemented Integrations (Phase 2-5)
+- **Frontend**: Next.js 15 with TypeScript and Tailwind CSS
+- **Wallet**: Solana Wallet Adapter (Phantom, Solflare, Backpack)
+- **Encryption**: Arcium SDK (`@arcium-hq/client`) with RescueCipher + x25519
+- **Storage**: IPFS via Pinata for encrypted message content
+- **Real-Time**: Background polling (3-second refresh)
+
+### Planned Integrations (Phase 4+)
 - **Payments**: ShadowWire for private payment attachments
-- **Monitoring**: Helius webhooks for real-time event tracking
-- **Storage**: IPFS for encrypted message content
-- **Frontend**: Next.js with TypeScript
-- **Wallet**: Solana Wallet Adapter
+- **Monitoring**: Helius webhooks for real-time event tracking (optional)
 
 ## Bounty Alignment
 
 ShieldChat targets **$53,000** across 5 hackathon bounties:
 
 ### 1. Arcium MPC Encryption ($10,000)
-- End-to-end encrypted messaging using MPC
-- Multi-party key generation for channel members
-- Secure key distribution without central authority
-- **Status**: Smart contract ready, MPC integration pending
+- End-to-end encrypted messaging using RescueCipher
+- x25519 elliptic curve Diffie-Hellman key exchange
+- Channel-based key derivation (all members share key)
+- **Status**: ✅ COMPLETED - Full Arcium SDK integration
 
 ### 2. ShadowWire Private Payments ($15,000)
 - Private payment attachments in messages
@@ -114,7 +117,7 @@ ShieldChat targets **$53,000** across 5 hackathon bounties:
 - Webhook integration for MessageLogged events
 - Real-time message delivery notifications
 - Transaction confirmation tracking
-- **Status**: Events implemented, webhook setup pending
+- **Status**: ⏳ Partial - Background polling implemented, webhooks optional
 
 ### 4. MagicBlock Zero-Fee Messaging ($5,000)
 - Programmable Ephemeral Rollups (PER) integration
@@ -129,7 +132,7 @@ ShieldChat targets **$53,000** across 5 hackathon bounties:
 
 ## Current Status
 
-### ✅ Completed (Phase 1)
+### ✅ Completed (Phase 1) - Smart Contract
 - Smart contract fully implemented and tested
 - All 6 core instructions operational:
   - `create_channel` - Initialize encrypted channels
@@ -144,14 +147,30 @@ ShieldChat targets **$53,000** across 5 hackathon bounties:
 - PDA-based account derivation
 - Error handling with custom error codes
 
-### 🚧 In Progress (Phase 2-7)
-- Frontend application (Next.js)
-- Arcium MPC encryption integration
+### ✅ Completed (Phase 2) - Frontend
+- Next.js 15 application with App Router
+- Solana wallet integration (Phantom, Solflare, Backpack)
+- Channel creation, joining, and messaging UI
+- Real-time message polling (3-second refresh)
+- Responsive dark theme design
+
+### ✅ Completed (Phase 3) - Arcium Encryption
+- Arcium SDK (`@arcium-hq/client`) integration
+- RescueCipher symmetric encryption (128-bit security)
+- x25519 elliptic curve key exchange
+- Channel-based key derivation
+- Browser polyfills for Node.js modules
+
+### ✅ Completed (Phase 5.1) - IPFS Storage
+- Pinata integration for message persistence
+- Encrypted content storage on IPFS
+- Public gateway fallbacks for retrieval
+- Demo mode (base64) when no JWT configured
+
+### 🚧 Remaining (Phase 4+)
 - ShadowWire payment attachments
-- Helius webhook monitoring
-- IPFS message storage
-- User interface components
-- Demo and documentation
+- Helius webhook monitoring (optional)
+- Demo video and documentation
 
 ## Key Features
 

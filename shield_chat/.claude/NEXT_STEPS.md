@@ -12,145 +12,43 @@ The Solana smart contract is fully implemented, tested, and deployed to devnet:
 - Token-gating support
 - PDA-based security
 
+### ✅ Phase 2: Next.js Frontend (COMPLETED)
+
+Full-featured frontend application:
+- Next.js 15 with App Router and TypeScript
+- Tailwind CSS for responsive dark theme
+- Solana wallet integration (Phantom, Solflare, Backpack)
+- Channel creation, joining, and messaging
+- Real-time message polling (3-second refresh)
+- Located at: `shieldchat-frontend/`
+
+### ✅ Phase 3: Arcium Encryption (COMPLETED)
+
+End-to-end encryption using Arcium SDK:
+- Package: `@arcium-hq/client`
+- RescueCipher symmetric encryption (128-bit security)
+- x25519 elliptic curve Diffie-Hellman key exchange
+- Channel-based key derivation (all members share key)
+- 16-byte nonces for message uniqueness
+- Browser polyfills for Node.js modules (fs, path)
+
+**Key Files:**
+- `shieldchat-frontend/src/lib/arcium.ts` - Encryption module
+- `shieldchat-frontend/next.config.ts` - Browser polyfills
+
+### ✅ Phase 5.1: IPFS Storage (COMPLETED)
+
+Decentralized message persistence:
+- Pinata integration for IPFS uploads
+- Encrypted content stored with CID on-chain
+- Public gateway fallbacks for retrieval
+- Demo mode (base64) when no JWT configured
+
+**Key Files:**
+- `shieldchat-frontend/src/lib/ipfs.ts` - IPFS client
+- `shieldchat-frontend/src/hooks/useMessages.ts` - Message handling
+
 ## Future Phases
-
-### 🚧 Phase 2: Next.js Frontend Setup
-
-**Objective**: Create a modern web application for ShieldChat
-
-**Tasks**:
-1. **Project Initialization**
-   ```bash
-   npx create-next-app@latest shieldchat-frontend \
-     --typescript \
-     --tailwind \
-     --app \
-     --eslint
-   ```
-
-2. **Install Solana Dependencies**
-   ```bash
-   yarn add @solana/web3.js \
-            @solana/wallet-adapter-react \
-            @solana/wallet-adapter-react-ui \
-            @solana/wallet-adapter-wallets \
-            @coral-xyz/anchor
-   ```
-
-3. **Core Components**
-   - Wallet connection button
-   - Channel list view
-   - Message thread view
-   - Create channel modal
-   - User profile
-
-4. **State Management**
-   - Option 1: React Context + Hooks
-   - Option 2: Zustand for global state
-   - Option 3: Redux Toolkit
-
-5. **Routing Structure**
-   ```
-   /                      # Landing page
-   /app                   # Main application
-   /app/channels          # Channel list
-   /app/channels/[id]     # Channel view
-   /app/settings          # User settings
-   ```
-
-**Estimated Time**: 1-2 weeks
-
-### 🚧 Phase 3: Arcium MPC Integration
-
-**Objective**: Implement end-to-end encryption using Arcium's Multi-Party Computation
-
-**Prerequisites**:
-- Arcium SDK account
-- API credentials
-- Understanding of MPC cryptography
-
-**Implementation Steps**:
-
-1. **Install Arcium SDK**
-   ```bash
-   yarn add @arcium/sdk
-   ```
-
-2. **Key Generation Flow**
-   ```typescript
-   // When creating a channel
-   async function createEncryptedChannel(members: PublicKey[]) {
-     // 1. Generate MPC keys for all members
-     const mpcKeys = await arcium.generateGroupKeys(members);
-
-     // 2. Encrypt channel metadata
-     const encryptedMetadata = await arcium.encrypt(
-       channelName,
-       mpcKeys.publicKey
-     );
-
-     // 3. Create on-chain channel
-     await program.methods
-       .createChannel(channelId, encryptedMetadata, type)
-       .rpc();
-   }
-   ```
-
-3. **Message Encryption**
-   ```typescript
-   async function sendEncryptedMessage(channelId: string, content: string) {
-     // 1. Get channel MPC keys
-     const keys = await arcium.getChannelKeys(channelId);
-
-     // 2. Encrypt message
-     const encrypted = await arcium.encrypt(content, keys.publicKey);
-
-     // 3. Upload to IPFS
-     const cid = await ipfs.add(encrypted);
-
-     // 4. Encrypt CID
-     const encryptedCid = await arcium.encrypt(cid, keys.publicKey);
-
-     // 5. Log on-chain
-     const hash = sha256(encrypted);
-     await program.methods
-       .logMessage(hash, encryptedCid)
-       .rpc();
-   }
-   ```
-
-4. **Message Decryption**
-   ```typescript
-   async function decryptMessage(channelId: string, encryptedCid: string) {
-     // 1. Get channel MPC keys
-     const keys = await arcium.getChannelKeys(channelId);
-
-     // 2. Decrypt CID
-     const cid = await arcium.decrypt(encryptedCid, keys.privateKeyShare);
-
-     // 3. Fetch from IPFS
-     const encrypted = await ipfs.get(cid);
-
-     // 4. Decrypt message
-     const message = await arcium.decrypt(encrypted, keys.privateKeyShare);
-
-     return message;
-   }
-   ```
-
-5. **Key Management**
-   - Store key shares securely (browser local storage with encryption)
-   - Implement key rotation
-   - Handle member addition/removal
-
-**Challenges**:
-- Key distribution complexity
-- Performance overhead of MPC
-- Key recovery mechanisms
-
-**Estimated Time**: 2-3 weeks
-
-**Bounty Value**: $10,000
 
 ### 🚧 Phase 4: ShadowWire Payment Attachments
 
