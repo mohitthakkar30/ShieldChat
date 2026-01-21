@@ -30,7 +30,7 @@ ShieldChat combines **four privacy-focused technologies** to create truly privat
 │                                                              │
 │   🔐 ARCIUM          → End-to-end message encryption        │
 │   💰 SHADOWWIRE      → Private payments (amounts hidden)    │
-│   ⚡ MAGICBLOCK      → Real-time presence (typing, online)  │
+│   ⚡ PRESENCE        → Real-time presence (typing, online)  │
 │   📡 HELIUS          → Instant message delivery             │
 │                                                              │
 │   All running on SOLANA for speed & low fees                │
@@ -100,28 +100,29 @@ Internal payments stay "pending" until the recipient withdraws from their Shadow
 
 ---
 
-### 3. MagicBlock — Real-Time Presence
+### 3. WebSocket Presence — Real-Time Features
 
-**What it does:** Powers typing indicators, online status, and read receipts using **TEE-protected ephemeral rollups**.
+**What it does:** Powers typing indicators, online status, and read receipts using a **lightweight WebSocket server**.
 
 **How we use it:**
 - **Typing Indicators**: See "Alice is typing..." with animated dots
 - **Online Status**: Green dot = online, gray = offline
-- **Read Receipts**: ✓ sent, ✓✓ delivered, blue ✓✓ = read
-- **Private by Design**: Presence data only visible to channel members
+- **Read Receipts**: Track which messages have been read
+- **Channel-Scoped**: Presence data only shared with channel members
 
-**Why it matters:** These features make chat feel "alive" and responsive. Using MagicBlock's Private Ephemeral Rollups means this real-time data is:
-- Fast (updates in milliseconds)
-- Private (protected by Intel TDX TEE)
-- Temporary (not stored permanently on-chain)
+**Why it matters:** These features make chat feel "alive" and responsive. The WebSocket presence server provides:
+- Instant updates (millisecond latency)
+- No wallet signatures required (great UX)
+- Automatic reconnection with exponential backoff
+- Heartbeat-based online status (5-second intervals)
 
 ```
 Presence Architecture:
 
-Your Browser ──WebSocket──► Presence Server ──► MagicBlock TEE
+Your Browser ──WebSocket──► Presence Server (ws://3001)
      │                            │
      │                            ▼
-     │                    Other Users in Channel
+     │                    Channel Subscribers
      │                            │
      ◄────────────────────────────┘
          (typing, online, read updates)
@@ -227,13 +228,14 @@ We implemented:
 - Payment attachments in messages
 - Amount privacy on-chain
 
-### MagicBlock ✅
-> "Use Private Ephemeral Rollups for real-time features"
+### Real-Time Presence ✅
+> "Real-time features for responsive chat experience"
 
 We built:
-- Typing indicators with TEE-protected state
-- Online status with permission-controlled visibility
-- Read receipts with sender-only access
+- Typing indicators with instant updates
+- Online status with heartbeat detection
+- Read receipts with channel-scoped visibility
+- WebSocket-based for no wallet signature interruptions
 
 ### Helius ✅
 > "Build with Helius Enhanced WebSockets"
@@ -259,7 +261,7 @@ ShieldChat combines ALL FOUR technologies into a cohesive product that solves a 
 | Private Payments | ❌ | ❌ | ❌ | ✅ (ShadowWire) |
 | Token Gating | ❌ | ❌ | Limited | ✅ (Native) |
 | Own Your Data | ❌ | ❌ | ❌ | ✅ (IPFS) |
-| Real-time Presence | ✅ | ✅ | ✅ | ✅ (MagicBlock) |
+| Real-time Presence | ✅ | ✅ | ✅ | ✅ (WebSocket) |
 
 ---
 
