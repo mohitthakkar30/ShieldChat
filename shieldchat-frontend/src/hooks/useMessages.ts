@@ -342,7 +342,7 @@ export function useMessages(channelPda: PublicKey | null) {
           parsedMessages.push({
             id: `${tx.transaction.signatures[0]}-${event.messageNumber.toString()}`,
             content,
-            sender: event.sender.toString().slice(0, 8),
+            sender: event.sender.toString(),
             timestamp: txTimestamp,
             txSignature: tx.transaction.signatures[0],
             payment,
@@ -358,7 +358,7 @@ export function useMessages(channelPda: PublicKey | null) {
             const messageNumber = match ? match[1] : "0";
 
             const accountKeys = tx.transaction.message.staticAccountKeys;
-            const sender = accountKeys[0]?.toString().slice(0, 8) || "Unknown";
+            const sender = accountKeys[0]?.toString() || "Unknown";
             const txTimestamp = new Date(
               (tx.blockTime || Date.now() / 1000) * 1000
             ).toISOString();
@@ -466,7 +466,7 @@ export function useMessages(channelPda: PublicKey | null) {
       const newMessage: ChatMessage = {
         id: Date.now().toString(),
         content, // Show original content locally
-        sender: sender.slice(0, 8),
+        sender: sender,
         timestamp: new Date().toISOString(),
         payment: payment, // Include payment for local display
       };
@@ -535,7 +535,7 @@ export function useMessages(channelPda: PublicKey | null) {
         const newMessage: ChatMessage = {
           id: `${signature}-helius`,
           content,
-          sender: sender?.slice(0, 8) || "Unknown",
+          sender: sender || "Unknown",
           timestamp: new Date(timestamp * 1000).toISOString(),
           txSignature: signature,
           payment: ipfsMessage.payment, // Include payment attachment if present

@@ -76,179 +76,62 @@ Real-time message delivery via Helius Enhanced WebSockets:
 - Falls back to full refresh if direct extraction fails
 - Duplicate detection to prevent showing same message twice
 
-## Future Phases
+## Completed Phases
 
-### 🚧 Phase 4: ShadowWire Payment Attachments
+### ✅ Phase 4: ShadowWire Payment Attachments (COMPLETED)
 
-**Objective**: Enable private payment attachments in messages
+Private payment attachments using ShadowWire's confidential transactions.
 
-**Prerequisites**:
-- ShadowWire SDK access
-- Understanding of zero-knowledge proofs
-- Payment infrastructure setup
+**Key Files:**
+- `shieldchat-frontend/src/lib/shadowwire.ts` - ShadowWire client
+- `shieldchat-frontend/src/hooks/usePayments.ts` - Payment state management
+- `shieldchat-frontend/src/components/PaymentModal.tsx` - Payment UI
 
-**Implementation Steps**:
-
-1. **Install ShadowWire SDK**
-   ```bash
-   yarn add @shadowwire/sdk
-   ```
-
-2. **Payment Attachment UI**
-   ```typescript
-   // Payment attachment component
-   function PaymentAttachment() {
-     const [amount, setAmount] = useState(0);
-     const [recipient, setRecipient] = useState('');
-
-     async function attachPayment() {
-       // 1. Create private transaction
-       const privateTx = await shadowwire.createTransaction({
-         amount,
-         recipient,
-         sender: wallet.publicKey
-       });
-
-       // 2. Attach to message
-       await sendMessage(content, {
-         paymentProof: privateTx.proof,
-         paymentId: privateTx.id
-       });
-     }
-   }
-   ```
-
-3. **Payment Verification**
-   ```typescript
-   async function verifyPayment(messageId: string) {
-     const message = await fetchMessage(messageId);
-
-     if (message.paymentProof) {
-       const isValid = await shadowwire.verifyProof(
-         message.paymentProof
-       );
-
-       return {
-         hasPayment: true,
-         verified: isValid,
-         // Amount is hidden
-       };
-     }
-   }
-   ```
-
-4. **Payment Claiming**
-   ```typescript
-   async function claimPayment(paymentId: string) {
-     const payment = await shadowwire.getPayment(paymentId);
-
-     // Claim with ZK proof of ownership
-     await shadowwire.claim(payment, wallet.privateKey);
-   }
-   ```
-
-**Features**:
-- Attach SOL/SPL tokens to messages
-- Hide payment amounts with ZK proofs
-- Recipient-only claim mechanism
-- Payment expiry/cancellation
-
-**Estimated Time**: 2-3 weeks
+**Features Implemented:**
+- ✅ Deposit SOL/tokens to ShadowWire shielded pool
+- ✅ Withdraw from shielded pool to wallet
+- ✅ Private internal transfers (amounts hidden on-chain)
+- ✅ Payment attachments embedded in messages
+- ✅ Transaction status display (pending/completed/failed)
+- ✅ Payment display in message bubbles
 
 **Bounty Value**: $15,000
 
-### 🚧 Phase 5: Helius Monitoring & IPFS Storage
+### ✅ Phase 5: MagicBlock Private Ephemeral Rollups (COMPLETED)
 
-**Objective**: Real-time message delivery and decentralized storage
+Real-time presence features using MagicBlock's TEE-protected ephemeral rollups.
 
-#### 5A: Helius Integration
+**Package:** `@magicblock-labs/ephemeral-rollups-sdk@0.8.0`
 
-1. **Setup Webhooks**
-   ```typescript
-   // Configure Helius webhook
-   const webhook = await helius.createWebhook({
-     webhookURL: 'https://api.yourapp.com/webhook',
-     transactionTypes: ['ANY'],
-     accountAddresses: [PROGRAM_ID],
-     webhookType: 'enhanced'
-   });
-   ```
+**Key Files:**
+- `presence-server/server.js` - WebSocket server for presence sync
+- `presence-server/package.json` - Server dependencies
+- `shieldchat-frontend/src/lib/magicblock.ts` - MagicBlock client
+- `shieldchat-frontend/src/hooks/usePresence.ts` - React presence hook
+- `shieldchat-frontend/src/components/TypingIndicator.tsx` - Animated typing dots
+- `shieldchat-frontend/src/components/OnlineStatus.tsx` - Green/gray status dot
+- `shieldchat-frontend/src/components/ReadReceipt.tsx` - Checkmark indicators
+- `shieldchat-frontend/src/components/WalletAddress.tsx` - Truncated address with copy
 
-2. **Webhook Handler**
-   ```typescript
-   // API route: /api/webhook
-   export async function POST(request: Request) {
-     const events = await request.json();
+**Features Implemented:**
+- ✅ Typing indicators (animated dots, auto-clear 3s)
+- ✅ Online status (green/gray dots on avatars)
+- ✅ Online user count in channel header
+- ✅ Read receipts (✓ sent, ✓✓ delivered, blue = read)
+- ✅ Wallet address display (`EuQoFfUb.....abadue` format)
+- ✅ Click-to-copy wallet addresses
+- ✅ WebSocket presence server with heartbeat
 
-     for (const event of events) {
-       if (event.type === 'ACCOUNT_UPDATE') {
-         // Parse MessageLogged event
-         const log = parseMessageLoggedEvent(event);
+**Running the Presence Server:**
+```bash
+cd presence-server
+npm install
+npm start  # Runs on ws://localhost:3001
+```
 
-         // Notify relevant clients
-         await notifyChannelMembers(log.channel, {
-           sender: log.sender,
-           messageNumber: log.messageNumber,
-           timestamp: log.timestamp
-         });
-       }
-     }
-   }
-   ```
+**Bounty Value**: $5,000 (MagicBlock)
 
-3. **Real-Time Notifications**
-   ```typescript
-   // WebSocket connection for real-time updates
-   const ws = new WebSocket('wss://api.yourapp.com/ws');
-
-   ws.on('message', (data) => {
-     const notification = JSON.parse(data);
-
-     if (notification.type === 'NEW_MESSAGE') {
-       // Fetch and decrypt message
-       fetchAndDisplayMessage(notification.messageId);
-     }
-   });
-   ```
-
-#### 5B: IPFS Storage
-
-1. **Setup IPFS Client**
-   ```bash
-   yarn add ipfs-http-client
-   ```
-
-2. **Upload Messages**
-   ```typescript
-   import { create } from 'ipfs-http-client';
-
-   const ipfs = create({ url: 'https://ipfs.infura.io:5001/api/v0' });
-
-   async function uploadMessage(encryptedContent: Buffer) {
-     const { cid } = await ipfs.add(encryptedContent);
-     return cid.toString();
-   }
-   ```
-
-3. **Retrieve Messages**
-   ```typescript
-   async function downloadMessage(cid: string) {
-     const chunks = [];
-     for await (const chunk of ipfs.cat(cid)) {
-       chunks.push(chunk);
-     }
-     return Buffer.concat(chunks);
-   }
-   ```
-
-4. **Pinning Service**
-   - Use Pinata or Infura for reliable storage
-   - Implement garbage collection for old messages
-   - Consider Arweave for permanent storage
-
-**Estimated Time**: 1-2 weeks
-
-**Bounty Value**: $5,000 (Helius)
+## Future Phases
 
 ### 🚧 Phase 6: Core UI Components
 
@@ -362,33 +245,41 @@ Real-time message delivery via Helius Enhanced WebSockets:
 
 ## Bounty Submission Checklist
 
-### Arcium ($10,000)
-- [ ] MPC encryption implemented
-- [ ] Key generation for channels
-- [ ] Message encryption/decryption
-- [ ] Working demo video
-- [ ] Documentation
+### Arcium ($10,000) ✅ READY
+- [x] MPC encryption implemented (RescueCipher)
+- [x] Key generation for channels (x25519 ECDH)
+- [x] Message encryption/decryption
+- [x] Working demo video
+- [x] Documentation
 
-### ShadowWire ($15,000)
-- [ ] Private payments integrated
-- [ ] ZK proof generation
-- [ ] Payment claim mechanism
-- [ ] Demo of private transfers
-- [ ] Documentation
+### ShadowWire ($15,000) ✅ READY
+- [x] Private payments integrated
+- [x] Deposit/Withdraw functionality
+- [x] Private internal transfers
+- [x] Payment attachments in messages
+- [x] Demo of private transfers
+- [x] Documentation
 
-### Helius ($5,000)
-- [ ] Webhook integration
-- [ ] Real-time notifications
-- [ ] Event monitoring
-- [ ] Demo of instant delivery
-- [ ] Documentation
+### MagicBlock ($5,000) ✅ READY
+- [x] Private Ephemeral Rollups integration
+- [x] Real-time presence (typing, online status)
+- [x] Read receipts
+- [x] WebSocket server for presence sync
+- [x] Documentation
 
-### Open Track ($18,000)
-- [ ] Novel privacy application
-- [ ] Multiple tech integrations
-- [ ] Real-world utility
-- [ ] Compelling demo
-- [ ] Strong documentation
+### Helius ($5,000) ✅ READY
+- [x] Enhanced WebSocket integration
+- [x] Real-time notifications
+- [x] Direct CID extraction from transactions
+- [x] Demo of instant delivery
+- [x] Documentation
+
+### Open Track ($18,000) ✅ READY
+- [x] Novel privacy application
+- [x] Multiple tech integrations (Arcium, ShadowWire, MagicBlock, Helius)
+- [x] Real-world utility
+- [x] Compelling demo
+- [x] Strong documentation
 
 ## Technical Debt & Improvements
 

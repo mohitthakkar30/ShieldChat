@@ -1,0 +1,252 @@
+/**
+ * ShieldChat Presence Server
+ *
+ * Simple WebSocket server for real-time presence synchronization.
+ * Handles typing indicators, online status, and read receipts.
+ *
+ * In production, this would be replaced by MagicBlock's TEE-protected
+ * ephemeral rollups for true privacy.
+ */
+
+import { WebSocketServer, WebSocket } from "ws";
+
+const PORT = process.env.PORT || 3001;
+
+// Create WebSocket server
+const wss = new WebSocketServer({ port: PORT });
+
+// Presence state: channelId -> Map<wallet, presence>
+const presenceByChannel = new Map();
+
+// Connected clients: ws -> { wallet, channels: Set<channelId> }
+const clients = new Map();
+
+// Cleanup interval (30 seconds)
+const CLEANUP_INTERVAL = 30000;
+const PRESENCE_TTL = 30000; // 30 seconds
+
+console.log(`ShieldChat Presence Server running on ws://localhost:${PORT}`);
+
+/**
+ * Broadcast presence update to all clients subscribed to a channel
+ */
+function broadcastToChannel(channelId, excludeWs = null) {
+  const channelPresence = presenceByChannel.get(channelId);
+  if (!channelPresence) return;
+
+  const presences = Array.from(channelPresence.values());
+
+  const message = JSON.stringify({
+    type: "presence_update",
+    channelId,
+    presences,
+  });
+
+  for (const [ws, clientInfo] of clients) {
+    if (ws !== excludeWs && ws.readyState === WebSocket.OPEN && clientInfo.channels.has(channelId)) {
+      ws.send(message);
+    }
+  }
+}
+
+/**
+ * Handle incoming WebSocket connection
+ */
+wss.on("connection", (ws) => {
+  console.log("Client connected");
+
+  // Initialize client info
+  clients.set(ws, { wallet: null, channels: new Set() });
+
+  ws.on("message", (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      handleMessage(ws, message);
+    } catch (err) {
+      console.error("Failed to parse message:", err);
+    }
+  });
+
+  ws.on("close", () => {
+    console.log("Client disconnected");
+    handleDisconnect(ws);
+  });
+
+  ws.on("error", (err) => {
+    console.error("WebSocket error:", err);
+  });
+});
+
+/**
+ * Handle incoming message
+ */
+function handleMessage(ws, message) {
+  const clientInfo = clients.get(ws);
+  if (!clientInfo) return;
+
+  switch (message.type) {
+    case "identify":
+      // Client identifies their wallet
+      clientInfo.wallet = message.wallet;
+      console.log(`Client identified as ${message.wallet?.slice(0, 8)}...`);
+      break;
+
+    case "subscribe":
+      // Subscribe to a channel's presence updates
+      if (message.channelId) {
+        clientInfo.channels.add(message.channelId);
+        console.log(`${clientInfo.wallet?.slice(0, 8)}... subscribed to ${message.channelId.slice(0, 8)}...`);
+
+        // Send current presence state
+        const channelPresence = presenceByChannel.get(message.channelId);
+        if (channelPresence) {
+          ws.send(JSON.stringify({
+            type: "presence_update",
+            channelId: message.channelId,
+            presences: Array.from(channelPresence.values()),
+          }));
+        }
+      }
+      break;
+
+    case "unsubscribe":
+      // Unsubscribe from a channel
+      if (message.channelId) {
+        clientInfo.channels.delete(message.channelId);
+      }
+      break;
+
+    case "set_typing":
+      // Update typing status
+      if (clientInfo.wallet && message.channelId) {
+        updatePresence(message.channelId, clientInfo.wallet, {
+          isTyping: message.isTyping,
+        });
+        broadcastToChannel(message.channelId);
+      }
+      break;
+
+    case "set_online":
+      // Update online status
+      if (clientInfo.wallet && message.channelId) {
+        updatePresence(message.channelId, clientInfo.wallet, {
+          isOnline: message.isOnline,
+        });
+        broadcastToChannel(message.channelId);
+      }
+      break;
+
+    case "mark_read":
+      // Mark message as read
+      if (clientInfo.wallet && message.channelId && message.messageNumber !== undefined) {
+        updatePresence(message.channelId, clientInfo.wallet, {
+          lastReadMessage: message.messageNumber,
+        });
+        broadcastToChannel(message.channelId);
+      }
+      break;
+
+    case "heartbeat":
+      // Keep-alive and update lastSeen
+      if (clientInfo.wallet) {
+        for (const channelId of clientInfo.channels) {
+          updatePresence(channelId, clientInfo.wallet, {
+            isOnline: true,
+          });
+        }
+        // Broadcast to all subscribed channels
+        for (const channelId of clientInfo.channels) {
+          broadcastToChannel(channelId);
+        }
+      }
+      break;
+
+    default:
+      console.log("Unknown message type:", message.type);
+  }
+}
+
+/**
+ * Update presence for a user in a channel
+ */
+function updatePresence(channelId, wallet, updates) {
+  if (!presenceByChannel.has(channelId)) {
+    presenceByChannel.set(channelId, new Map());
+  }
+
+  const channelPresence = presenceByChannel.get(channelId);
+  const existing = channelPresence.get(wallet) || {
+    wallet,
+    channelId,
+    isTyping: false,
+    isOnline: true,
+    lastSeen: Date.now(),
+    lastReadMessage: 0,
+  };
+
+  const updated = {
+    ...existing,
+    ...updates,
+    lastSeen: Date.now(),
+  };
+
+  channelPresence.set(wallet, updated);
+}
+
+/**
+ * Handle client disconnect
+ */
+function handleDisconnect(ws) {
+  const clientInfo = clients.get(ws);
+  if (!clientInfo) return;
+
+  // Set offline in all subscribed channels
+  if (clientInfo.wallet) {
+    for (const channelId of clientInfo.channels) {
+      updatePresence(channelId, clientInfo.wallet, {
+        isOnline: false,
+        isTyping: false,
+      });
+      broadcastToChannel(channelId);
+    }
+  }
+
+  clients.delete(ws);
+}
+
+/**
+ * Cleanup stale presence entries
+ */
+function cleanupStalePresence() {
+  const now = Date.now();
+
+  for (const [channelId, channelPresence] of presenceByChannel) {
+    let changed = false;
+
+    for (const [wallet, presence] of channelPresence) {
+      if (now - presence.lastSeen > PRESENCE_TTL) {
+        channelPresence.delete(wallet);
+        changed = true;
+      }
+    }
+
+    // Remove empty channels
+    if (channelPresence.size === 0) {
+      presenceByChannel.delete(channelId);
+    } else if (changed) {
+      broadcastToChannel(channelId);
+    }
+  }
+}
+
+// Run cleanup periodically
+setInterval(cleanupStalePresence, CLEANUP_INTERVAL);
+
+// Handle process termination
+process.on("SIGINT", () => {
+  console.log("\nShutting down presence server...");
+  wss.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
+});

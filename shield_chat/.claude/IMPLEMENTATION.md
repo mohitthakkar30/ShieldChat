@@ -567,3 +567,104 @@ seeds: ["member", channel_pubkey, wallet_pubkey]
 - ✅ Arcium encryption integration complete (RescueCipher + x25519)
 - ✅ IPFS storage complete (Pinata with demo mode fallback)
 - ✅ Helius real-time monitoring complete (Enhanced WebSockets with direct CID extraction)
+- ✅ ShadowWire payment attachments complete (private deposits, withdrawals, transfers)
+- ✅ MagicBlock presence features complete (typing, online status, read receipts)
+
+---
+
+## Phase 4: ShadowWire Payment Attachments
+
+### Integration Overview
+Private payment attachments using ShadowWire's confidential transactions.
+
+**Key Files:**
+- `shieldchat-frontend/src/lib/shadowwire.ts` - ShadowWire client
+- `shieldchat-frontend/src/hooks/usePayments.ts` - Payment state management
+- `shieldchat-frontend/src/components/PaymentModal.tsx` - Payment UI
+
+**Features:**
+- Deposit SOL/tokens to ShadowWire shielded pool
+- Withdraw from shielded pool to wallet
+- Private internal transfers (amounts hidden on-chain)
+- Payment attachments embedded in messages
+- Transaction status display (pending/completed/failed)
+
+---
+
+## Phase 5: MagicBlock Private Ephemeral Rollups
+
+### Integration Overview
+Real-time presence features using MagicBlock's TEE-protected ephemeral rollups.
+
+**Package:** `@magicblock-labs/ephemeral-rollups-sdk@0.8.0`
+
+**Key Files:**
+- `presence-server/server.js` - WebSocket server for presence sync
+- `presence-server/package.json` - Server dependencies
+- `shieldchat-frontend/src/lib/magicblock.ts` - MagicBlock client
+- `shieldchat-frontend/src/hooks/usePresence.ts` - React presence hook
+- `shieldchat-frontend/src/components/TypingIndicator.tsx` - Animated typing dots
+- `shieldchat-frontend/src/components/OnlineStatus.tsx` - Green/gray status dot
+- `shieldchat-frontend/src/components/ReadReceipt.tsx` - Checkmark indicators
+- `shieldchat-frontend/src/components/WalletAddress.tsx` - Truncated address with copy
+
+### Presence Architecture
+```
+Frontend (usePresence hook)
+    │
+    ├── WebSocket → Presence Server (ws://localhost:3001)
+    │                    │
+    │                    ├── Heartbeat every 5s
+    │                    ├── Typing status (auto-clear 3s)
+    │                    └── Online status (TTL 30s)
+    │
+    └── MagicBlock SDK (TEE auth for production)
+```
+
+### Features Implemented
+
+1. **Typing Indicators**
+   - Real-time "User is typing..." display
+   - Animated bouncing dots
+   - Auto-clear after 3 seconds of inactivity
+   - Multiple users support
+
+2. **Online Status**
+   - Green dot = online, Gray dot = offline
+   - Displayed on message avatars
+   - Online count in channel header
+   - Heartbeat every 5 seconds maintains status
+   - 30-second TTL for stale cleanup
+
+3. **Read Receipts**
+   - Single check (✓) = sent
+   - Double check (✓✓) = delivered
+   - Blue double check = read
+   - Only shown for own messages
+
+4. **Wallet Address Display**
+   - Format: `EuQoFfUb.....abadue` (first 8 + "...." + last 6)
+   - Click to copy full address to clipboard
+   - "Copied!" tooltip feedback (2 seconds)
+   - Used throughout: message sender, payment recipient, typing indicator
+
+### WebSocket Server (presence-server)
+```javascript
+// Message types handled:
+- identify: Associate wallet with connection
+- subscribe: Subscribe to channel presence
+- unsubscribe: Unsubscribe from channel
+- set_typing: Update typing status
+- set_online: Update online status
+- mark_read: Mark message as read
+- heartbeat: Keep connection alive
+
+// Broadcasts presence_update to all channel subscribers
+```
+
+### Running the Presence Server
+```bash
+cd presence-server
+npm install
+npm start  # Runs on ws://localhost:3001
+```

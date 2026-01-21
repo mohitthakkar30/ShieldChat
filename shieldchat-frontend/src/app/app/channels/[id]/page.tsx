@@ -7,14 +7,19 @@ import { useShieldChat, Channel, Member } from "@/hooks/useShieldChat";
 import { useMessages, ChatMessage } from "@/hooks/useMessages";
 import { useHelius } from "@/hooks/useHelius";
 import { usePayments } from "@/hooks/usePayments";
+import { usePresence } from "@/hooks/usePresence";
 import { HeliusMessage } from "@/lib/helius";
 import { parseChannelType } from "@/lib/anchor";
 import { PaymentModal } from "@/components/PaymentModal";
+import { TypingIndicator } from "@/components/TypingIndicator";
+import { OnlineStatus } from "@/components/OnlineStatus";
+import { ReadReceipt } from "@/components/ReadReceipt";
 import {
   PaymentAttachment,
   formatAmount,
   getSolscanUrl,
 } from "@/lib/shadowwire";
+import { WalletAddress } from "@/components/WalletAddress";
 
 export default function ChannelPage() {
   const params = useParams();
@@ -94,6 +99,16 @@ export default function ChannelPage() {
     loading: paymentLoading,
     error: paymentError,
   } = usePayments();
+
+  // Presence state (MagicBlock Private Ephemeral Rollups)
+  const {
+    typingUsers,
+    onlineUsers,
+    readReceipts,
+    setTyping,
+    markAsRead,
+    isUserOnline,
+  } = usePresence(channelPda);
 
   // Load channel data
   useEffect(() => {
@@ -271,6 +286,15 @@ export default function ChannelPage() {
                 <span>{channelType}</span>
                 <span>•</span>
                 <span>{channel.account.memberCount} members</span>
+                {onlineUsers.length > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="text-green-400 flex items-center">
+                      <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
+                      {onlineUsers.length} online
+                    </span>
+                  </>
+                )}
                 <span>•</span>
                 <span>{channel.account.messageCount.toString()} messages</span>
                 {isOwner && (
@@ -338,9 +362,21 @@ export default function ChannelPage() {
             </div>
           </div>
         ) : (
-          messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+          messages.map((message, index) => (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              isUserOnline={isUserOnline}
+              isOwnMessage={message.sender === publicKey?.toString()}
+              isRead={readReceipts.get(message.sender) !== undefined}
+              onVisible={() => markAsRead(index + 1)}
+            />
           ))
+        )}
+
+        {/* Typing Indicator */}
+        {typingUsers.length > 0 && (
+          <TypingIndicator users={typingUsers} />
         )}
       </div>
 
@@ -390,7 +426,12 @@ export default function ChannelPage() {
                 <input
                   type="text"
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    // Trigger typing indicator
+                    setTyping(e.target.value.length > 0);
+                  }}
+                  onBlur={() => setTyping(false)}
                   placeholder="Type a message..."
                   className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
                   disabled={sending || paymentLoading}
@@ -455,19 +496,52 @@ export default function ChannelPage() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+interface MessageBubbleProps {
+  message: ChatMessage;
+  isUserOnline: (wallet: string) => boolean;
+  isOwnMessage: boolean;
+  isRead: boolean;
+  onVisible: () => void;
+}
+
+function MessageBubble({
+  message,
+  isUserOnline,
+  isOwnMessage,
+  isRead,
+  onVisible,
+}: MessageBubbleProps) {
   const timestamp = new Date(message.timestamp);
+  const senderOnline = isUserOnline(message.sender);
+
+  // Mark as read when message becomes visible
+  useEffect(() => {
+    onVisible();
+  }, [onVisible]);
+
   return (
     <div className="flex items-start space-x-3">
-      <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-sm">
-        {message.sender[0]}
+      <div className="relative">
+        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-sm">
+          {message.sender[0]}
+        </div>
+        {/* Online status indicator */}
+        <div className="absolute -bottom-0.5 -right-0.5">
+          <OnlineStatus isOnline={senderOnline} size="sm" pulse={false} />
+        </div>
       </div>
       <div className="flex-1">
         <div className="flex items-baseline space-x-2">
-          <span className="font-medium">{message.sender}...</span>
+          <span className="font-medium">
+            <WalletAddress address={message.sender} />
+          </span>
           <span className="text-xs text-gray-500">
             {timestamp.toLocaleTimeString()}
           </span>
+          {/* Read receipt for own messages */}
+          {isOwnMessage && (
+            <ReadReceipt sent={true} delivered={true} read={isRead} />
+          )}
         </div>
         <p className="text-gray-300 mt-1">{message.content}</p>
 
@@ -498,7 +572,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
               </span>
               <span className="text-gray-500 mx-2">→</span>
               <span className="text-gray-400 font-mono">
-                {message.payment.recipient.slice(0, 8)}...
+                <WalletAddress address={message.payment.recipient} />
               </span>
             </div>
             {message.payment.txSignature && (

@@ -1,0 +1,14 @@
+{
+  "name": "shieldchat-presence-server",
+  "version": "1.0.0",
+  "description": "WebSocket server for ShieldChat presence (typing, online, read receipts)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
