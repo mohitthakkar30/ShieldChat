@@ -10,6 +10,7 @@ import {
   ChannelAccount,
   MemberAccount,
   getChannelTypeArg,
+  parseChannelType,
 } from "@/lib/anchor";
 import { getChannelPDA, getMemberPDA } from "@/lib/constants";
 
@@ -30,7 +31,7 @@ export function useShieldChat() {
 
   const publicKey = anchorWallet?.publicKey || null;
 
-  // Create a new channel
+  // Create a new channel (two separate transactions)
   const createChannel = useCallback(
     async (name: string, channelType: string = "privateGroup") => {
       if (!anchorWallet || !publicKey) {
@@ -45,7 +46,6 @@ export function useShieldChat() {
         const channelId = new anchor.BN(Date.now());
 
         // Encrypt metadata (for now, just encode as bytes - real encryption comes in Phase 3)
-        // Anchor expects Buffer for bytes type
         const encryptedMetadata = Buffer.from(name);
 
         // Get channel PDA
@@ -54,8 +54,8 @@ export function useShieldChat() {
         // Get channel type argument
         const channelTypeArg = getChannelTypeArg(channelType);
 
-        // Create channel
-        const tx = await program.methods
+        // Step 1: Create the channel
+        const createTx = await program.methods
           .createChannel(channelId, encryptedMetadata, channelTypeArg)
           .accounts({
             channel: channelPda,
@@ -64,32 +64,25 @@ export function useShieldChat() {
           })
           .rpc();
 
-        console.log("Channel created:", tx);
+        console.log("Channel created:", createTx);
 
-        // Auto-join the channel as owner
+        // Step 2: Auto-join the channel as owner (separate tx after channel exists)
         const [memberPda] = getMemberPDA(channelPda, publicKey);
 
-        // Check if member account already exists (shouldn't for new channel, but be safe)
-        let joinTx = "skipped";
-        try {
-          await (program.account as Record<string, unknown> & { member: { fetch: (key: PublicKey) => Promise<unknown> } }).member.fetch(memberPda);
-          console.log("Member already exists, skipping auto-join");
-        } catch {
-          // Member doesn't exist, proceed with joining
-          joinTx = await program.methods
-            .joinChannel()
-            .accounts({
-              channel: channelPda,
-              member: memberPda,
-              memberWallet: publicKey,
-              systemProgram: SystemProgram.programId,
-            })
-            .rpc();
-          console.log("Auto-joined channel:", joinTx);
-        }
+        const joinTx = await program.methods
+          .joinChannel()
+          .accounts({
+            channel: channelPda,
+            member: memberPda,
+            memberWallet: publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+
+        console.log("Auto-joined channel:", joinTx);
 
         return {
-          signature: tx,
+          signature: createTx,
           channelId: channelId.toString(),
           channelPda,
         };
@@ -329,6 +322,67 @@ export function useShieldChat() {
     }
   }, [anchorWallet]);
 
+  // Fetch only channels the user can access (owner or member)
+  // Private channels are hidden from non-members
+  // Uses batch RPC call for performance
+  const fetchAccessibleChannels = useCallback(async (): Promise<Channel[]> => {
+    if (!anchorWallet || !publicKey) {
+      return [];
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const program = getProgram(anchorWallet);
+      const connection = program.provider.connection;
+      const allChannels = await (program.account as Record<string, unknown> & { channel: { all: () => Promise<Array<{ publicKey: PublicKey; account: unknown }>> } }).channel.all();
+
+      const accessibleChannels: Channel[] = [];
+      const privateChannelsToCheck: Array<{ channel: Channel; memberPda: PublicKey }> = [];
+
+      // First pass: add public channels and owner's channels immediately
+      for (const c of allChannels) {
+        const channel = c.account as ChannelAccount;
+        const channelType = parseChannelType(channel.channelType);
+
+        if (channelType === "Public") {
+          accessibleChannels.push({ publicKey: c.publicKey, account: channel });
+        } else if (channel.owner.equals(publicKey)) {
+          accessibleChannels.push({ publicKey: c.publicKey, account: channel });
+        } else {
+          // Need to check membership - collect for batch fetch
+          const [memberPda] = getMemberPDA(c.publicKey, publicKey);
+          privateChannelsToCheck.push({
+            channel: { publicKey: c.publicKey, account: channel },
+            memberPda,
+          });
+        }
+      }
+
+      // Batch check memberships in single RPC call (much faster than sequential)
+      if (privateChannelsToCheck.length > 0) {
+        const memberPdas = privateChannelsToCheck.map(p => p.memberPda);
+        const memberAccounts = await connection.getMultipleAccountsInfo(memberPdas);
+
+        for (let i = 0; i < memberAccounts.length; i++) {
+          if (memberAccounts[i] !== null) {
+            // Member account exists = user is a member
+            accessibleChannels.push(privateChannelsToCheck[i].channel);
+          }
+        }
+      }
+
+      return accessibleChannels;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to fetch channels";
+      setError(message);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [anchorWallet, publicKey]);
+
   // Fetch a specific channel
   const fetchChannel = useCallback(
     async (channelPda: PublicKey): Promise<Channel | null> => {
@@ -399,6 +453,7 @@ export function useShieldChat() {
     // Queries
     fetchMyChannels,
     fetchAllChannels,
+    fetchAccessibleChannels,
     fetchChannel,
     checkMembership,
   };

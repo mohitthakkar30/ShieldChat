@@ -10,7 +10,7 @@ interface ChannelListProps {
 }
 
 export function ChannelList({ onCreateChannel }: ChannelListProps) {
-  const { fetchAllChannels, loading, connected } = useShieldChat();
+  const { fetchAccessibleChannels, loading, connected } = useShieldChat();
   const [channels, setChannels] = useState<Channel[]>([]);
 
   useEffect(() => {
@@ -20,7 +20,9 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
   }, [connected]);
 
   const loadChannels = async () => {
-    const result = await fetchAllChannels();
+    // Only fetch channels the user can access (owner or member)
+    // Private channels are hidden from non-members
+    const result = await fetchAccessibleChannels();
     setChannels(result);
   };
 
