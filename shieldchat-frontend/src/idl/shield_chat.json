@@ -82,6 +82,108 @@
       ]
     },
     {
+      "name": "create_channel_and_join",
+      "docs": [
+        "Create a channel and automatically join the creator as the first member",
+        "This combines create_channel + join_channel into a single atomic instruction",
+        "Eliminates the need for two separate wallet signatures"
+      ],
+      "discriminator": [
+        11,
+        6,
+        180,
+        222,
+        125,
+        195,
+        116,
+        114
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  109,
+                  98,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "channel_id",
+          "type": "u64"
+        },
+        {
+          "name": "encrypted_metadata",
+          "type": "bytes"
+        },
+        {
+          "name": "channel_type",
+          "type": {
+            "defined": {
+              "name": "ChannelType"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "join_channel",
       "docs": [
         "Add member to channel with optional token-gating"

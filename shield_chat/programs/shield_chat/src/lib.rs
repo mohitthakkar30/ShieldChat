@@ -46,6 +46,51 @@ pub mod shield_chat {
         Ok(())
     }
 
+    /// Create a channel and automatically join the creator as the first member
+    /// This combines create_channel + join_channel into a single atomic instruction
+    /// Eliminates the need for two separate wallet signatures
+    pub fn create_channel_and_join(
+        ctx: Context<CreateChannelAndJoin>,
+        channel_id: u64,
+        encrypted_metadata: Vec<u8>,
+        channel_type: ChannelType,
+    ) -> Result<()> {
+        require!(
+            encrypted_metadata.len() <= MAX_METADATA_SIZE,
+            ErrorCode::MetadataTooLarge
+        );
+
+        let clock = Clock::get()?;
+        let channel = &mut ctx.accounts.channel;
+        let member = &mut ctx.accounts.member;
+
+        // Initialize channel
+        channel.channel_id = channel_id;
+        channel.owner = ctx.accounts.creator.key();
+        channel.encrypted_metadata = encrypted_metadata;
+        channel.channel_type = channel_type;
+        channel.member_count = 1; // Creator is first member
+        channel.message_count = 0;
+        channel.created_at = clock.unix_timestamp;
+        channel.is_active = true;
+        channel.required_token_mint = None;
+        channel.min_token_amount = None;
+        channel.bump = ctx.bumps.channel;
+
+        // Initialize member (creator auto-joins)
+        member.channel = channel.key();
+        member.wallet = ctx.accounts.creator.key();
+        member.joined_at = clock.unix_timestamp;
+        member.is_active = true;
+        member.bump = ctx.bumps.member;
+
+        msg!("Channel created and joined: ID {}", channel_id);
+        msg!("Creator: {}", channel.owner);
+        msg!("Type: {:?}", channel.channel_type);
+
+        Ok(())
+    }
+
     /// Add member to channel with optional token-gating
     pub fn join_channel(
         ctx: Context<JoinChannel>,
@@ -191,6 +236,33 @@ pub struct CreateChannel<'info> {
 
     #[account(mut)]
     pub owner: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(channel_id: u64)]
+pub struct CreateChannelAndJoin<'info> {
+    #[account(
+        init,
+        payer = creator,
+        space = 8 + Channel::LEN,
+        seeds = [CHANNEL_SEED, creator.key().as_ref(), channel_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub channel: Account<'info, Channel>,
+
+    #[account(
+        init,
+        payer = creator,
+        space = 8 + Member::LEN,
+        seeds = [MEMBER_SEED, channel.key().as_ref(), creator.key().as_ref()],
+        bump
+    )]
+    pub member: Account<'info, Member>,
+
+    #[account(mut)]
+    pub creator: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }

@@ -31,7 +31,7 @@ export function useShieldChat() {
 
   const publicKey = anchorWallet?.publicKey || null;
 
-  // Create a new channel (two separate transactions)
+  // Create a new channel (single atomic transaction with create + join)
   const createChannel = useCallback(
     async (name: string, channelType: string = "privateGroup") => {
       if (!anchorWallet || !publicKey) {
@@ -54,35 +54,25 @@ export function useShieldChat() {
         // Get channel type argument
         const channelTypeArg = getChannelTypeArg(channelType);
 
-        // Step 1: Create the channel
-        const createTx = await program.methods
-          .createChannel(channelId, encryptedMetadata, channelTypeArg)
-          .accounts({
-            channel: channelPda,
-            owner: publicKey,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc();
-
-        console.log("Channel created:", createTx);
-
-        // Step 2: Auto-join the channel as owner (separate tx after channel exists)
+        // Get member PDA for auto-join
         const [memberPda] = getMemberPDA(channelPda, publicKey);
 
-        const joinTx = await program.methods
-          .joinChannel()
+        // Single instruction - creates channel and joins in one tx
+        // skipPreflight: true to avoid simulation warning (member PDA depends on channel being initialized)
+        const tx = await program.methods
+          .createChannelAndJoin(channelId, encryptedMetadata, channelTypeArg)
           .accounts({
             channel: channelPda,
             member: memberPda,
-            memberWallet: publicKey,
+            creator: publicKey,
             systemProgram: SystemProgram.programId,
           })
-          .rpc();
+          .rpc({ skipPreflight: true });
 
-        console.log("Auto-joined channel:", joinTx);
+        console.log("Channel created and joined:", tx);
 
         return {
-          signature: createTx,
+          signature: tx,
           channelId: channelId.toString(),
           channelPda,
         };
