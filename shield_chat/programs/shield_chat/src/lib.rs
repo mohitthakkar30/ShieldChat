@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{Token, TokenAccount};
 
 declare_id!("FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN");
 
@@ -92,6 +93,7 @@ pub mod shield_chat {
     }
 
     /// Add member to channel with optional token-gating
+    /// If channel has token requirements, user must provide their token account
     pub fn join_channel(
         ctx: Context<JoinChannel>,
     ) -> Result<()> {
@@ -104,9 +106,36 @@ pub mod shield_chat {
             ErrorCode::ChannelFull
         );
 
-        // Token-gating check (if required)
-        // Note: For now, token-gating is handled at the application layer
-        // In production, you would deserialize and validate the token_gate_account here
+        // Token-gating check (if channel requires it)
+        if let (Some(required_mint), Some(min_amount)) =
+            (channel.required_token_mint, channel.min_token_amount)
+        {
+            // Token account is required for token-gated channels
+            let user_token_account = ctx.accounts.user_token_account
+                .as_ref()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+
+            // Verify token account belongs to the joining wallet
+            require!(
+                user_token_account.owner == ctx.accounts.member_wallet.key(),
+                ErrorCode::TokenAccountOwnerMismatch
+            );
+
+            // Verify token account is for the correct mint
+            require!(
+                user_token_account.mint == required_mint,
+                ErrorCode::TokenMintMismatch
+            );
+
+            // Verify sufficient balance
+            require!(
+                user_token_account.amount >= min_amount,
+                ErrorCode::InsufficientTokens
+            );
+
+            msg!("Token gate verified: {} >= {} required",
+                 user_token_account.amount, min_amount);
+        }
 
         let clock = Clock::get()?;
 
@@ -284,6 +313,13 @@ pub struct JoinChannel<'info> {
     #[account(mut)]
     pub member_wallet: Signer<'info>,
 
+    /// User's token account (required for token-gated channels)
+    /// Optional: only needed when joining a token-gated channel
+    pub user_token_account: Option<Account<'info, TokenAccount>>,
+
+    /// SPL Token program (required when user_token_account is provided)
+    pub token_program: Option<Program<'info, Token>>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -420,4 +456,13 @@ pub enum ErrorCode {
 
     #[msg("Unauthorized sender")]
     UnauthorizedSender,
+
+    #[msg("Token account required for token-gated channel")]
+    TokenAccountRequired,
+
+    #[msg("Token account owner does not match wallet")]
+    TokenAccountOwnerMismatch,
+
+    #[msg("Token mint does not match channel requirement")]
+    TokenMintMismatch,
 }

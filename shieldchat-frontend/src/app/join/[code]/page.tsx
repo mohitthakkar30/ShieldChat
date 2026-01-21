@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey } from "@solana/web3.js";
+import { getAssociatedTokenAddress, getAccount } from "@solana/spl-token";
 import { useInvites } from "@/hooks/useInvites";
-import { useShieldChat } from "@/hooks/useShieldChat";
+import { useShieldChat, Channel } from "@/hooks/useShieldChat";
 import { DbInvite } from "@/lib/supabase";
 import { parseChannelType } from "@/lib/anchor";
 
@@ -16,6 +17,7 @@ export default function JoinPage() {
   const code = (params.code as string)?.toUpperCase();
 
   const { publicKey, connected } = useWallet();
+  const { connection } = useConnection();
   const { getInvite, useInviteCode, loading: inviteLoading, error: inviteError } = useInvites();
   const { joinChannel, fetchChannel, checkMembership, loading: shieldChatLoading } = useShieldChat();
 
@@ -25,9 +27,15 @@ export default function JoinPage() {
     type: string;
     memberCount: number;
   } | null>(null);
+  const [channelData, setChannelData] = useState<Channel | null>(null);
   const [status, setStatus] = useState<"loading" | "valid" | "invalid" | "expired" | "maxed" | "already_member">("loading");
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+
+  // Token-gating state
+  const [tokenBalance, setTokenBalance] = useState<bigint | null>(null);
+  const [userTokenAccount, setUserTokenAccount] = useState<PublicKey | null>(null);
+  const [checkingTokenBalance, setCheckingTokenBalance] = useState(false);
 
   // Fetch invite details
   useEffect(() => {
@@ -48,18 +56,21 @@ export default function JoinPage() {
       // Fetch channel info
       try {
         const channelPda = new PublicKey(inviteData.channel_pda);
-        const channelData = await fetchChannel(channelPda);
+        const channel = await fetchChannel(channelPda);
 
-        if (channelData) {
-          const name = channelData.account.encryptedMetadata
-            ? new TextDecoder().decode(new Uint8Array(channelData.account.encryptedMetadata))
+        if (channel) {
+          const name = channel.account.encryptedMetadata
+            ? new TextDecoder().decode(new Uint8Array(channel.account.encryptedMetadata))
             : "Private Channel";
 
           setChannelInfo({
             name,
-            type: parseChannelType(channelData.account.channelType),
-            memberCount: channelData.account.memberCount,
+            type: parseChannelType(channel.account.channelType),
+            memberCount: channel.account.memberCount,
           });
+
+          // Store full channel data for token-gating check
+          setChannelData(channel);
         }
       } catch (err) {
         console.error("Failed to fetch channel info:", err);
@@ -70,6 +81,48 @@ export default function JoinPage() {
 
     fetchInvite();
   }, [code, getInvite, fetchChannel]);
+
+  // Check token balance for token-gated channels
+  useEffect(() => {
+    if (!connected || !publicKey || !channelData) return;
+
+    const checkTokenBalance = async () => {
+      // Check if channel is token-gated
+      const requiredMint = channelData.account.requiredTokenMint;
+      const minAmount = channelData.account.minTokenAmount;
+
+      if (!requiredMint || !minAmount) {
+        // Not token-gated, no need to check
+        setTokenBalance(null);
+        setUserTokenAccount(null);
+        return;
+      }
+
+      setCheckingTokenBalance(true);
+
+      try {
+        // Get user's associated token account for this mint
+        const ata = await getAssociatedTokenAddress(requiredMint, publicKey);
+        setUserTokenAccount(ata);
+
+        // Fetch the token account to get balance
+        try {
+          const tokenAccount = await getAccount(connection, ata);
+          setTokenBalance(tokenAccount.amount);
+        } catch {
+          // Token account doesn't exist, balance is 0
+          setTokenBalance(BigInt(0));
+        }
+      } catch (err) {
+        console.error("Failed to check token balance:", err);
+        setTokenBalance(BigInt(0));
+      } finally {
+        setCheckingTokenBalance(false);
+      }
+    };
+
+    checkTokenBalance();
+  }, [connected, publicKey, channelData, connection]);
 
   // Check if user is already a member when wallet connects
   useEffect(() => {
@@ -95,6 +148,15 @@ export default function JoinPage() {
   const handleJoin = useCallback(async () => {
     if (!connected || !publicKey || !invite) return;
 
+    // Check token requirements before joining
+    if (channelData?.account.requiredTokenMint && channelData?.account.minTokenAmount) {
+      const minAmount = channelData.account.minTokenAmount;
+      if (tokenBalance === null || tokenBalance < minAmount) {
+        setJoinError(`Insufficient token balance. You need at least ${minAmount.toString()} tokens to join this channel.`);
+        return;
+      }
+    }
+
     setJoining(true);
     setJoinError(null);
 
@@ -108,8 +170,9 @@ export default function JoinPage() {
       }
 
       // Join the channel on-chain
+      // Pass token account if this is a token-gated channel
       const channelPda = new PublicKey(result.channelPda);
-      await joinChannel(channelPda);
+      await joinChannel(channelPda, userTokenAccount || undefined);
 
       // Redirect to the channel
       router.push(`/app/channels/${result.channelPda}`);
@@ -119,7 +182,7 @@ export default function JoinPage() {
     } finally {
       setJoining(false);
     }
-  }, [connected, publicKey, invite, code, useInviteCode, joinChannel, router]);
+  }, [connected, publicKey, invite, code, useInviteCode, joinChannel, router, channelData, tokenBalance, userTokenAccount]);
 
   // Go to channel if already a member
   const handleGoToChannel = useCallback(() => {
@@ -242,6 +305,48 @@ export default function JoinPage() {
                       <span className="text-gray-300">
                         {invite.max_uses - invite.used_count} of {invite.max_uses}
                       </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Token Requirements (for token-gated channels) */}
+              {channelData?.account.requiredTokenMint && channelData?.account.minTokenAmount && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-yellow-300 font-medium">
+                    <span>🎫</span>
+                    <span>Token Requirements</span>
+                  </div>
+                  <div className="text-sm space-y-1">
+                    <div className="flex justify-between text-gray-400">
+                      <span>Required token:</span>
+                      <span className="text-gray-300 font-mono text-xs">
+                        {channelData.account.requiredTokenMint.toString().slice(0, 4)}...{channelData.account.requiredTokenMint.toString().slice(-4)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-gray-400">
+                      <span>Minimum amount:</span>
+                      <span className="text-gray-300">{channelData.account.minTokenAmount.toString()}</span>
+                    </div>
+                    {connected && (
+                      <div className="flex justify-between text-gray-400 pt-2 border-t border-gray-700 mt-2">
+                        <span>Your balance:</span>
+                        {checkingTokenBalance ? (
+                          <span className="text-gray-500">Checking...</span>
+                        ) : tokenBalance !== null ? (
+                          <span className={tokenBalance >= channelData.account.minTokenAmount ? "text-green-400" : "text-red-400"}>
+                            {tokenBalance.toString()}
+                            {tokenBalance >= channelData.account.minTokenAmount ? " ✓" : " ✗"}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">-</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {connected && tokenBalance !== null && tokenBalance < channelData.account.minTokenAmount && (
+                    <div className="text-xs text-red-400 mt-2">
+                      You don&apos;t have enough tokens to join this channel.
                     </div>
                   )}
                 </div>

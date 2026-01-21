@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PublicKey } from "@solana/web3.js";
 import { useShieldChat } from "@/hooks/useShieldChat";
 
 interface CreateChannelModalProps {
@@ -14,10 +15,14 @@ export function CreateChannelModal({
   onClose,
   onSuccess,
 }: CreateChannelModalProps) {
-  const { createChannel, loading, error } = useShieldChat();
+  const { createChannel, setTokenGate, loading, error } = useShieldChat();
   const [name, setName] = useState("");
   const [type, setType] = useState("privateGroup");
   const [localError, setLocalError] = useState<string | null>(null);
+
+  // Token-gating configuration
+  const [tokenMint, setTokenMint] = useState("");
+  const [minTokenAmount, setMinTokenAmount] = useState("");
 
   if (!isOpen) return null;
 
@@ -30,10 +35,42 @@ export function CreateChannelModal({
       return;
     }
 
+    // Validate token-gating fields if token gated type is selected
+    if (type === "tokenGated") {
+      if (!tokenMint.trim()) {
+        setLocalError("Token mint address is required for token-gated channels");
+        return;
+      }
+      if (!minTokenAmount.trim() || isNaN(Number(minTokenAmount)) || Number(minTokenAmount) <= 0) {
+        setLocalError("Minimum token amount must be a positive number");
+        return;
+      }
+      // Validate that it's a valid public key
+      try {
+        new PublicKey(tokenMint.trim());
+      } catch {
+        setLocalError("Invalid token mint address");
+        return;
+      }
+    }
+
     try {
-      await createChannel(name.trim(), type);
+      const result = await createChannel(name.trim(), type);
+
+      // If token-gated, set the token requirements after creating the channel
+      if (type === "tokenGated" && tokenMint && minTokenAmount) {
+        await setTokenGate(
+          result.channelPda,
+          new PublicKey(tokenMint.trim()),
+          BigInt(minTokenAmount)
+        );
+      }
+
+      // Reset form
       setName("");
       setType("privateGroup");
+      setTokenMint("");
+      setMinTokenAmount("");
       onSuccess();
       onClose();
     } catch (err) {
@@ -125,6 +162,46 @@ export function CreateChannelModal({
               />
             </div>
           </div>
+
+          {/* Token-Gating Configuration (shown only when Token Gated is selected) */}
+          {type === "tokenGated" && (
+            <div className="space-y-3 p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/30">
+              <div className="text-sm text-yellow-300 font-medium mb-2">
+                Token Requirements
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">
+                  Token Mint Address
+                </label>
+                <input
+                  type="text"
+                  value={tokenMint}
+                  onChange={(e) => setTokenMint(e.target.value)}
+                  placeholder="e.g., EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  The SPL token mint address that users must hold
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">
+                  Minimum Amount (smallest units)
+                </label>
+                <input
+                  type="number"
+                  value={minTokenAmount}
+                  onChange={(e) => setMinTokenAmount(e.target.value)}
+                  placeholder="e.g., 1000000 for 1 USDC (6 decimals)"
+                  min="1"
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Amount in smallest units (e.g., 1 USDC = 1000000 with 6 decimals)
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Error Message */}
           {(localError || error) && (

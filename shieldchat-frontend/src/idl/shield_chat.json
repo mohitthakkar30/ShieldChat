@@ -186,7 +186,8 @@
     {
       "name": "join_channel",
       "docs": [
-        "Add member to channel with optional token-gating"
+        "Add member to channel with optional token-gating",
+        "If channel has token requirements, user must provide their token account"
       ],
       "discriminator": [
         124,
@@ -234,6 +235,22 @@
           "name": "member_wallet",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "user_token_account",
+          "docs": [
+            "User's token account (required for token-gated channels)",
+            "Optional: only needed when joining a token-gated channel"
+          ],
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL Token program (required when user_token_account is provided)"
+          ],
+          "optional": true,
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
           "name": "system_program",
@@ -478,6 +495,21 @@
       "code": 6007,
       "name": "UnauthorizedSender",
       "msg": "Unauthorized sender"
+    },
+    {
+      "code": 6008,
+      "name": "TokenAccountRequired",
+      "msg": "Token account required for token-gated channel"
+    },
+    {
+      "code": 6009,
+      "name": "TokenAccountOwnerMismatch",
+      "msg": "Token account owner does not match wallet"
+    },
+    {
+      "code": 6010,
+      "name": "TokenMintMismatch",
+      "msg": "Token mint does not match channel requirement"
     }
   ],
   "types": [

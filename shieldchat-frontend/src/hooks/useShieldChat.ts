@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useAnchorWallet } from "@solana/wallet-adapter-react";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import * as anchor from "@coral-xyz/anchor";
 import { Buffer } from "buffer";
 import {
@@ -88,8 +89,9 @@ export function useShieldChat() {
   );
 
   // Join an existing channel
+  // For token-gated channels, pass the user's token account pubkey
   const joinChannel = useCallback(
-    async (channelPda: PublicKey) => {
+    async (channelPda: PublicKey, userTokenAccount?: PublicKey) => {
       if (!anchorWallet || !publicKey) {
         throw new Error("Wallet not connected");
       }
@@ -117,15 +119,28 @@ export function useShieldChat() {
           // Member doesn't exist, proceed with joining
         }
 
+        // Build accounts object - token accounts are optional
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const accounts: any = {
+          channel: channelPda,
+          member: memberPda,
+          memberWallet: publicKey,
+          systemProgram: SystemProgram.programId,
+        };
+
+        // Add token accounts if provided (required for token-gated channels)
+        if (userTokenAccount) {
+          accounts.userTokenAccount = userTokenAccount;
+          accounts.tokenProgram = TOKEN_PROGRAM_ID;
+        } else {
+          accounts.userTokenAccount = null;
+          accounts.tokenProgram = null;
+        }
+
         // Join channel
         const tx = await program.methods
           .joinChannel()
-          .accounts({
-            channel: channelPda,
-            member: memberPda,
-            memberWallet: publicKey,
-            systemProgram: SystemProgram.programId,
-          })
+          .accounts(accounts)
           .rpc();
 
         console.log("Joined channel:", tx);
@@ -241,6 +256,43 @@ export function useShieldChat() {
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Failed to leave channel";
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [anchorWallet, publicKey]
+  );
+
+  // Set token-gating requirements for a channel (owner only)
+  const setTokenGate = useCallback(
+    async (channelPda: PublicKey, tokenMint: PublicKey, minAmount: bigint) => {
+      if (!anchorWallet || !publicKey) {
+        throw new Error("Wallet not connected");
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const program = getProgram(anchorWallet);
+
+        const tx = await program.methods
+          .setTokenGate(tokenMint, new anchor.BN(minAmount.toString()))
+          .accounts({
+            channel: channelPda,
+            owner: publicKey,
+          })
+          .rpc();
+
+        console.log("Token gate set:", tx);
+
+        return {
+          signature: tx,
+        };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to set token gate";
         setError(message);
         throw err;
       } finally {
@@ -439,6 +491,7 @@ export function useShieldChat() {
     joinChannel,
     logMessage,
     leaveChannel,
+    setTokenGate,
 
     // Queries
     fetchMyChannels,
