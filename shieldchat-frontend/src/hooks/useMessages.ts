@@ -10,6 +10,13 @@ import {
   EncryptedData,
 } from "@/lib/arcium";
 import { PaymentAttachment } from "@/lib/shadowwire";
+import {
+  fetchMessagesFromCache,
+  saveMessageToCache,
+  saveMessagesToCache,
+  DbMessage,
+  isSupabaseConfigured,
+} from "@/lib/supabase";
 
 // MessageLogged event discriminator from IDL
 const MESSAGE_LOGGED_DISCRIMINATOR = [24, 236, 247, 207, 227, 70, 101, 210];
@@ -227,7 +234,223 @@ export function useMessages(channelPda: PublicKey | null) {
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   /**
-   * Fetch messages for a channel by parsing transaction logs
+   * Fetch messages from Solana/IPFS (original flow)
+   * Used as fallback when Supabase cache is empty or fails
+   */
+  const fetchFromSolanaAndIPFS = useCallback(async (): Promise<{
+    messages: ChatMessage[];
+    dbMessages: DbMessage[];
+  }> => {
+    if (!channelPda) {
+      return { messages: [], dbMessages: [] };
+    }
+
+    const connection = new Connection(RPC_ENDPOINT, {
+      commitment: "confirmed",
+      confirmTransactionInitialTimeout: 30000,
+    });
+
+    // Get recent signatures for the channel account
+    const signatures = await connection.getSignaturesForAddress(
+      channelPda,
+      { limit: 50 },
+      "confirmed"
+    );
+
+    if (signatures.length === 0) {
+      return { messages: [], dbMessages: [] };
+    }
+
+    // Fetch transaction details in parallel batches
+    const BATCH_SIZE = 5;
+    const txs: (VersionedTransactionResponse | null)[] = [];
+
+    for (let i = 0; i < signatures.length; i += BATCH_SIZE) {
+      const batch = signatures.slice(i, i + BATCH_SIZE);
+
+      const batchResults = await Promise.all(
+        batch.map(async (sig) => {
+          try {
+            const tx = await connection.getTransaction(sig.signature, {
+              maxSupportedTransactionVersion: 0,
+            });
+            return tx;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      txs.push(...batchResults);
+    }
+
+    const parsedMessages: ChatMessage[] = [];
+    const dbMessages: DbMessage[] = [];
+
+    for (const tx of txs) {
+      if (!tx || !tx.meta || !tx.meta.logMessages) {
+        continue;
+      }
+
+      const logs = tx.meta.logMessages;
+
+      // Try to parse MessageLogged event from logs (primary method)
+      const event = parseMessageLoggedEvent(logs);
+
+      if (event) {
+        const txTimestamp = new Date(
+          Number(event.timestamp) * 1000
+        ).toISOString();
+
+        let content = `Message #${event.messageNumber.toString()}`;
+        let payment: PaymentAttachment | undefined;
+        let encryptedData: EncryptedData | null = null;
+
+        // Fetch content from IPFS using the CID from the event
+        if (event.encryptedIpfsCid) {
+          try {
+            const ipfsMessage = await fetchMessage(event.encryptedIpfsCid);
+            if (ipfsMessage) {
+              // Extract payment attachment if present
+              payment = ipfsMessage.payment;
+
+              // Store encrypted data for caching
+              if (ipfsMessage.encrypted && ipfsMessage.encryptedData) {
+                encryptedData = ipfsMessage.encryptedData;
+              }
+
+              // Check if message is encrypted and decrypt it
+              if (ipfsMessage.encrypted && ipfsMessage.encryptedData && channelPda) {
+                try {
+                  // Pass channelPda string directly - Arcium SDK derives keys internally
+                  content = await decryptMessage(ipfsMessage.encryptedData, channelPda.toString());
+                } catch (decryptErr) {
+                  console.error("Failed to decrypt message:", decryptErr);
+                  content = "[Encrypted message - decryption failed]";
+                }
+              } else {
+                content = ipfsMessage.content;
+              }
+            }
+          } catch {
+            // IPFS fetch failed, use default content
+          }
+        }
+
+        const txSignature = tx.transaction.signatures[0];
+
+        parsedMessages.push({
+          id: `${txSignature}-${event.messageNumber.toString()}`,
+          content,
+          sender: event.sender.toString(),
+          timestamp: txTimestamp,
+          txSignature,
+          payment,
+        });
+
+        // Prepare for Supabase cache
+        dbMessages.push({
+          channel_id: channelPda.toString(),
+          tx_signature: txSignature,
+          sender: event.sender.toString(),
+          ipfs_cid: event.encryptedIpfsCid,
+          encrypted_data: encryptedData,
+          payment: payment || null,
+          message_number: Number(event.messageNumber),
+          timestamp: txTimestamp,
+        });
+      } else {
+        // Fallback: Look for MessageLogged text in logs
+        const programLog = logs.find(log =>
+          log.includes("Program log: Message logged:")
+        );
+
+        if (programLog) {
+          const match = programLog.match(/Message logged: #(\d+)/);
+          const messageNumber = match ? match[1] : "0";
+
+          const accountKeys = tx.transaction.message.staticAccountKeys;
+          const sender = accountKeys[0]?.toString() || "Unknown";
+          const txTimestamp = new Date(
+            (tx.blockTime || Date.now() / 1000) * 1000
+          ).toISOString();
+
+          // Try to extract CID from instruction data (fallback)
+          const cid = extractCidFromTx(tx);
+          let content = `Message #${messageNumber}`;
+          let payment: PaymentAttachment | undefined;
+          let encryptedData: EncryptedData | null = null;
+
+          if (cid) {
+            try {
+              const ipfsMessage = await fetchMessage(cid);
+              if (ipfsMessage) {
+                // Extract payment attachment if present
+                payment = ipfsMessage.payment;
+
+                // Store encrypted data for caching
+                if (ipfsMessage.encrypted && ipfsMessage.encryptedData) {
+                  encryptedData = ipfsMessage.encryptedData;
+                }
+
+                // Check if message is encrypted and decrypt it
+                if (ipfsMessage.encrypted && ipfsMessage.encryptedData && channelPda) {
+                  try {
+                    // Pass channelPda string directly - Arcium SDK derives keys internally
+                    content = await decryptMessage(ipfsMessage.encryptedData, channelPda.toString());
+                  } catch (decryptErr) {
+                    console.error("Failed to decrypt message:", decryptErr);
+                    content = "[Encrypted message - decryption failed]";
+                  }
+                } else {
+                  content = ipfsMessage.content;
+                }
+              }
+            } catch {
+              // IPFS fetch failed, use default content
+            }
+          }
+
+          const txSignature = tx.transaction.signatures[0];
+
+          parsedMessages.push({
+            id: `${txSignature}-${messageNumber}`,
+            content,
+            sender,
+            timestamp: txTimestamp,
+            txSignature,
+            payment,
+          });
+
+          // Prepare for Supabase cache
+          if (cid) {
+            dbMessages.push({
+              channel_id: channelPda.toString(),
+              tx_signature: txSignature,
+              sender,
+              ipfs_cid: cid,
+              encrypted_data: encryptedData,
+              payment: payment || null,
+              message_number: Number(messageNumber),
+              timestamp: txTimestamp,
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by timestamp (oldest first)
+    parsedMessages.sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    return { messages: parsedMessages, dbMessages };
+  }, [channelPda]);
+
+  /**
+   * Fetch messages for a channel
+   * Primary: Supabase cache (fast)
+   * Fallback: Solana/IPFS (reliable)
    * @param isBackgroundRefresh - If true, don't show loading state (keeps messages visible)
    */
   const fetchChannelMessages = useCallback(async (isBackgroundRefresh = false) => {
@@ -248,169 +471,64 @@ export function useMessages(channelPda: PublicKey | null) {
     setError(null);
 
     try {
-      const connection = new Connection(RPC_ENDPOINT, {
-        commitment: "confirmed",
-        confirmTransactionInitialTimeout: 30000,
-      });
+      const channelId = channelPda.toString();
 
-      // Get recent signatures for the channel account
-      let signatures;
-      try {
-        signatures = await connection.getSignaturesForAddress(
-          channelPda,
-          { limit: 50 },
-          "confirmed"
-        );
-      } catch (sigErr) {
-        throw sigErr;
-      }
+      // Try Supabase cache first (fast path)
+      if (isSupabaseConfigured()) {
+        try {
+          const cachedMessages = await fetchMessagesFromCache(channelId);
 
-      if (signatures.length === 0) {
-        setMessages([]);
-        return [];
-      }
+          if (cachedMessages.length > 0) {
+            console.log(`[useMessages] Using ${cachedMessages.length} cached messages from Supabase`);
 
-      // Fetch transaction details in parallel batches
-      const BATCH_SIZE = 5;
-      const txs: (VersionedTransactionResponse | null)[] = [];
+            // Decrypt cached messages client-side
+            const decryptedMessages: ChatMessage[] = [];
 
-      for (let i = 0; i < signatures.length; i += BATCH_SIZE) {
-        const batch = signatures.slice(i, i + BATCH_SIZE);
+            for (const cached of cachedMessages) {
+              let content = "[Encrypted message]";
 
-        const batchResults = await Promise.all(
-          batch.map(async (sig) => {
-            try {
-              const tx = await connection.getTransaction(sig.signature, {
-                maxSupportedTransactionVersion: 0,
+              // Decrypt if we have encrypted data
+              if (cached.encrypted_data) {
+                try {
+                  content = await decryptMessage(cached.encrypted_data, channelId);
+                } catch (decryptErr) {
+                  console.error("Failed to decrypt cached message:", decryptErr);
+                  content = "[Encrypted message - decryption failed]";
+                }
+              }
+
+              decryptedMessages.push({
+                id: `${cached.tx_signature}-${cached.message_number || 0}`,
+                content,
+                sender: cached.sender,
+                timestamp: cached.timestamp,
+                txSignature: cached.tx_signature,
+                payment: cached.payment || undefined,
               });
-              return tx;
-            } catch {
-              return null;
             }
-          })
-        );
 
-        txs.push(...batchResults);
-      }
-
-      const parsedMessages: ChatMessage[] = [];
-
-      for (const tx of txs) {
-        if (!tx || !tx.meta || !tx.meta.logMessages) {
-          continue;
-        }
-
-        const logs = tx.meta.logMessages;
-
-        // Try to parse MessageLogged event from logs (primary method)
-        const event = parseMessageLoggedEvent(logs);
-
-        if (event) {
-          const txTimestamp = new Date(
-            Number(event.timestamp) * 1000
-          ).toISOString();
-
-          let content = `Message #${event.messageNumber.toString()}`;
-          let payment: PaymentAttachment | undefined;
-
-          // Fetch content from IPFS using the CID from the event
-          if (event.encryptedIpfsCid) {
-            try {
-              const ipfsMessage = await fetchMessage(event.encryptedIpfsCid);
-              if (ipfsMessage) {
-                // Extract payment attachment if present
-                payment = ipfsMessage.payment;
-
-                // Check if message is encrypted and decrypt it
-                if (ipfsMessage.encrypted && ipfsMessage.encryptedData && channelPda) {
-                  try {
-                    // Pass channelPda string directly - Arcium SDK derives keys internally
-                    content = await decryptMessage(ipfsMessage.encryptedData, channelPda.toString());
-                  } catch (decryptErr) {
-                    console.error("Failed to decrypt message:", decryptErr);
-                    content = "[Encrypted message - decryption failed]";
-                  }
-                } else {
-                  content = ipfsMessage.content;
-                }
-              }
-            } catch {
-              // IPFS fetch failed, use default content
-            }
+            setMessages(decryptedMessages);
+            return decryptedMessages;
           }
-
-          parsedMessages.push({
-            id: `${tx.transaction.signatures[0]}-${event.messageNumber.toString()}`,
-            content,
-            sender: event.sender.toString(),
-            timestamp: txTimestamp,
-            txSignature: tx.transaction.signatures[0],
-            payment,
-          });
-        } else {
-          // Fallback: Look for MessageLogged text in logs
-          const programLog = logs.find(log =>
-            log.includes("Program log: Message logged:")
-          );
-
-          if (programLog) {
-            const match = programLog.match(/Message logged: #(\d+)/);
-            const messageNumber = match ? match[1] : "0";
-
-            const accountKeys = tx.transaction.message.staticAccountKeys;
-            const sender = accountKeys[0]?.toString() || "Unknown";
-            const txTimestamp = new Date(
-              (tx.blockTime || Date.now() / 1000) * 1000
-            ).toISOString();
-
-            // Try to extract CID from instruction data (fallback)
-            const cid = extractCidFromTx(tx);
-            let content = `Message #${messageNumber}`;
-            let payment: PaymentAttachment | undefined;
-
-            if (cid) {
-              try {
-                const ipfsMessage = await fetchMessage(cid);
-                if (ipfsMessage) {
-                  // Extract payment attachment if present
-                  payment = ipfsMessage.payment;
-
-                  // Check if message is encrypted and decrypt it
-                  if (ipfsMessage.encrypted && ipfsMessage.encryptedData && channelPda) {
-                    try {
-                      // Pass channelPda string directly - Arcium SDK derives keys internally
-                      content = await decryptMessage(ipfsMessage.encryptedData, channelPda.toString());
-                    } catch (decryptErr) {
-                      console.error("Failed to decrypt message:", decryptErr);
-                      content = "[Encrypted message - decryption failed]";
-                    }
-                  } else {
-                    content = ipfsMessage.content;
-                  }
-                }
-              } catch {
-                // IPFS fetch failed, use default content
-              }
-            }
-
-            parsedMessages.push({
-              id: `${tx.transaction.signatures[0]}-${messageNumber}`,
-              content,
-              sender,
-              timestamp: txTimestamp,
-              txSignature: tx.transaction.signatures[0],
-              payment,
-            });
-          }
+        } catch (cacheErr) {
+          console.error("[useMessages] Supabase cache error, falling back to IPFS:", cacheErr);
+          // Continue to IPFS fallback
         }
       }
 
-      // Sort by timestamp (oldest first)
-      parsedMessages.sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
+      // Fallback: Fetch from Solana/IPFS
+      console.log("[useMessages] Cache miss or not configured, fetching from Solana/IPFS");
+      const { messages: parsedMessages, dbMessages } = await fetchFromSolanaAndIPFS();
 
       setMessages(parsedMessages);
+
+      // Async: Save to Supabase for next time (non-blocking)
+      if (isSupabaseConfigured() && dbMessages.length > 0) {
+        saveMessagesToCache(dbMessages).catch(err => {
+          console.error("[useMessages] Failed to save to cache:", err);
+        });
+      }
+
       return parsedMessages;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to fetch messages";
@@ -420,7 +538,7 @@ export function useMessages(channelPda: PublicKey | null) {
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, [channelPda]);
+  }, [channelPda, fetchFromSolanaAndIPFS]);
 
   /**
    * Add a new message locally (optimistic update)
@@ -488,6 +606,7 @@ export function useMessages(channelPda: PublicKey | null) {
   /**
    * Add a single message from Helius WebSocket notification
    * This is faster than re-fetching all messages
+   * Also saves to Supabase cache for future loads
    */
   const addMessageFromHelius = useCallback(
     async (
@@ -519,6 +638,8 @@ export function useMessages(channelPda: PublicKey | null) {
         }
 
         let content = ipfsMessage.content;
+        const senderAddress = sender || "Unknown";
+        const messageTimestamp = new Date(timestamp * 1000).toISOString();
 
         // Decrypt if encrypted
         if (ipfsMessage.encrypted && ipfsMessage.encryptedData) {
@@ -535,8 +656,8 @@ export function useMessages(channelPda: PublicKey | null) {
         const newMessage: ChatMessage = {
           id: `${signature}-helius`,
           content,
-          sender: sender || "Unknown",
-          timestamp: new Date(timestamp * 1000).toISOString(),
+          sender: senderAddress,
+          timestamp: messageTimestamp,
           txSignature: signature,
           payment: ipfsMessage.payment, // Include payment attachment if present
         };
@@ -555,6 +676,25 @@ export function useMessages(channelPda: PublicKey | null) {
           console.log("[useMessages] Added message from Helius:", content.slice(0, 30) + "...");
           return [...prev, newMessage];
         });
+
+        // Async: Save to Supabase cache (non-blocking)
+        if (isSupabaseConfigured()) {
+          const dbMessage: DbMessage = {
+            channel_id: channelPda.toString(),
+            tx_signature: signature,
+            sender: senderAddress,
+            ipfs_cid: cid,
+            encrypted_data: ipfsMessage.encrypted && ipfsMessage.encryptedData
+              ? ipfsMessage.encryptedData
+              : null,
+            payment: ipfsMessage.payment || null,
+            timestamp: messageTimestamp,
+          };
+
+          saveMessageToCache(dbMessage).catch(err => {
+            console.error("[useMessages] Failed to cache Helius message:", err);
+          });
+        }
 
         return true;
       } catch (err) {
