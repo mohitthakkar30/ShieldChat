@@ -182,6 +182,9 @@ export default function ChannelPage() {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       await loadChannelData();
+
+      // Presence is handled via WebSocket server (no on-chain presence needed)
+      console.log("[Channel] ✅ Joined channel, presence will sync via WebSocket");
     } catch (err) {
       console.error("Failed to join channel:", err);
       alert(`Failed to join: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -451,7 +454,13 @@ export default function ChannelPage() {
 
               <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
                 <p>Messages are encrypted with Arcium and stored on IPFS.</p>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-4">
+                  {/* Presence Status */}
+                  <span className="flex items-center text-green-400">
+                    <span className="w-2 h-2 rounded-full mr-1 bg-green-400"></span>
+                    Presence Active
+                  </span>
+                  {/* Helius Status */}
                   {heliusAvailable ? (
                     <span className={`flex items-center ${heliusConnected ? 'text-green-400' : 'text-yellow-400'}`}>
                       <span className={`w-2 h-2 rounded-full mr-1 ${heliusConnected ? 'bg-green-400' : 'bg-yellow-400'}`}></span>

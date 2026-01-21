@@ -4,7 +4,10 @@
  * React Hook for MagicBlock Private Presence
  *
  * Manages typing indicators, online status, and read receipts
- * using MagicBlock's Private Ephemeral Rollups (TEE-protected).
+ * using WebSocket presence server for real-time updates.
+ *
+ * Note: On-chain presence with TEE delegation is available but requires
+ * wallet signatures for each update. WebSocket is used for better UX.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
