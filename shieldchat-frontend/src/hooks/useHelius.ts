@@ -142,10 +142,10 @@ export function useHelius({
 
     // Register the callback
     unsubscribeRef.current = clientRef.current.onMessage(handleMessage);
-    console.log(
-      "[useHelius] Listening for messages on channel:",
-      channelStr.slice(0, 8) + "..."
-    );
+    // console.log(
+    //   "[useHelius] Listening for messages on channel:",
+    //   channelStr.slice(0, 8) + "..."
+    // );
 
     return () => {
       if (unsubscribeRef.current) {

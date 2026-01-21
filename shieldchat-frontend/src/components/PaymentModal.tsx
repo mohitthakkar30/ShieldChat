@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { Transaction, Connection } from "@solana/web3.js";
+import { Transaction, VersionedTransaction, Connection } from "@solana/web3.js";
 import {
   SUPPORTED_TOKENS,
   SupportedToken,
@@ -29,6 +29,14 @@ interface PaymentModalProps {
 }
 
 type ModalTab = "send" | "deposit" | "withdraw";
+
+// Minimum withdrawal amounts per token (ShadowWire requirement)
+const MIN_WITHDRAW_AMOUNTS: Record<SupportedToken, number> = {
+  SOL: 0.05,    // 0.05 SOL
+  USDC: 5,      // 5 USDC
+  BONK: 100000, // 100k BONK
+  RADR: 1,      // 1 RADR
+};
 
 export function PaymentModal({
   isOpen,
@@ -57,6 +65,8 @@ export function PaymentModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [lastTxSignature, setLastTxSignature] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Fetch balance when token or wallet changes
   useEffect(() => {
@@ -83,6 +93,8 @@ export function PaymentModal({
       setRecipient(defaultRecipient);
       setError(null);
       setSuccess(null);
+      setLastTxSignature(null);
+      setCopied(false);
     }
   }, [isOpen, defaultRecipient]);
 
@@ -136,7 +148,8 @@ export function PaymentModal({
         lastValidBlockHeight,
       }, "confirmed");
 
-      setSuccess(`Deposit successful! TX: ${txSignature.slice(0, 8)}...`);
+      setLastTxSignature(txSignature);
+      setSuccess("Deposit successful!");
       setAmount("");
 
       // Refresh balance after a short delay
@@ -165,6 +178,13 @@ export function PaymentModal({
       return;
     }
 
+    // Check minimum withdrawal amount
+    const minAmount = MIN_WITHDRAW_AMOUNTS[token];
+    if (amountNum < minAmount) {
+      setError(`Minimum withdrawal is ${minAmount} ${token}`);
+      return;
+    }
+
     if (!publicKey || !sendTransaction) {
       setError("Wallet not connected or doesn't support signing");
       return;
@@ -177,24 +197,52 @@ export function PaymentModal({
 
       // Decode the base64 transaction
       const txBuffer = Buffer.from(result.unsignedTx, "base64");
-      const transaction = Transaction.from(txBuffer);
 
-      // Get a fresh blockhash from mainnet
-      const { blockhash, lastValidBlockHeight } = await mainnetConnection.getLatestBlockhash("confirmed");
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = publicKey;
+      // Try to parse as VersionedTransaction first (V0), fall back to legacy
+      let transaction: Transaction | VersionedTransaction;
+
+      try {
+        transaction = VersionedTransaction.deserialize(txBuffer);
+        console.log("[ShadowWire] Parsed as VersionedTransaction");
+
+        // For VersionedTransaction, check if blockhash is still valid
+        const blockhashFromTx = transaction.message.recentBlockhash;
+        const isValid = await mainnetConnection.isBlockhashValid(blockhashFromTx);
+
+        if (!isValid.value) {
+          console.warn("[ShadowWire] Transaction blockhash expired, retrying...");
+          // Retry getting a fresh transaction
+          const retryResult = await shadowWireWithdraw(publicKey.toString(), amountNum, token);
+          const retryBuffer = Buffer.from(retryResult.unsignedTx, "base64");
+          transaction = VersionedTransaction.deserialize(retryBuffer);
+        }
+      } catch (parseError) {
+        transaction = Transaction.from(txBuffer);
+        console.log("[ShadowWire] Parsed as legacy Transaction");
+
+        // Only modify blockhash for legacy transactions
+        const { blockhash } = await mainnetConnection.getLatestBlockhash("confirmed");
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = publicKey;
+      }
 
       // Send transaction using wallet adapter (handles signing automatically)
-      const txSignature = await sendTransaction(transaction, mainnetConnection);
+      // skipPreflight can help avoid simulation errors for complex transactions
+      const txSignature = await sendTransaction(transaction, mainnetConnection, {
+        skipPreflight: true,
+        maxRetries: 3,
+      });
 
       // Wait for confirmation
+      const { blockhash, lastValidBlockHeight } = await mainnetConnection.getLatestBlockhash("confirmed");
       await mainnetConnection.confirmTransaction({
         signature: txSignature,
         blockhash,
         lastValidBlockHeight,
       }, "confirmed");
 
-      setSuccess(`Withdrawal successful! TX: ${txSignature.slice(0, 8)}...`);
+      setLastTxSignature(txSignature);
+      setSuccess("Withdrawal successful!");
       setAmount("");
 
       // Refresh balance after a short delay
@@ -202,7 +250,17 @@ export function PaymentModal({
         await refreshBalance();
       }, 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Withdrawal failed");
+      console.error("[ShadowWire] Withdraw error:", err);
+      const errorMsg = err instanceof Error ? err.message : "Withdrawal failed";
+
+      // Provide more helpful error messages
+      if (errorMsg.includes("simulation") || errorMsg.includes("revert")) {
+        setError("Transaction failed. The ShadowWire pool may have insufficient liquidity. Try a smaller amount or try again later.");
+      } else if (errorMsg.includes("blockhash")) {
+        setError("Transaction expired. Please try again.");
+      } else {
+        setError(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
@@ -267,7 +325,7 @@ export function PaymentModal({
         <div className="flex space-x-1 bg-gray-900 rounded-lg p-1 mb-4">
           <button
             type="button"
-            onClick={() => { setActiveTab("send"); setError(null); setSuccess(null); }}
+            onClick={() => { setActiveTab("send"); setError(null); setSuccess(null); setLastTxSignature(null); setCopied(false); }}
             className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
               activeTab === "send"
                 ? "bg-purple-600 text-white"
@@ -278,7 +336,7 @@ export function PaymentModal({
           </button>
           <button
             type="button"
-            onClick={() => { setActiveTab("deposit"); setError(null); setSuccess(null); }}
+            onClick={() => { setActiveTab("deposit"); setError(null); setSuccess(null); setLastTxSignature(null); setCopied(false); }}
             className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
               activeTab === "deposit"
                 ? "bg-green-600 text-white"
@@ -289,7 +347,7 @@ export function PaymentModal({
           </button>
           <button
             type="button"
-            onClick={() => { setActiveTab("withdraw"); setError(null); setSuccess(null); }}
+            onClick={() => { setActiveTab("withdraw"); setError(null); setSuccess(null); setLastTxSignature(null); setCopied(false); }}
             className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
               activeTab === "withdraw"
                 ? "bg-orange-600 text-white"
@@ -310,8 +368,34 @@ export function PaymentModal({
 
         {/* Success Message */}
         {success && (
-          <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-3 text-green-400 text-sm mb-4">
-            {success}
+          <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-3 mb-4">
+            <div className="text-green-400 text-sm">{success}</div>
+            {lastTxSignature && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-400">TX:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(lastTxSignature);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="text-xs font-mono text-green-300 hover:text-green-200 cursor-pointer underline"
+                  title="Click to copy full signature"
+                >
+                  {lastTxSignature.slice(0, 8)}...{lastTxSignature.slice(-6)}
+                </button>
+                {copied && <span className="text-xs text-green-400">Copied!</span>}
+                <a
+                  href={`https://solscan.io/tx/${lastTxSignature}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-400 hover:text-blue-300 underline"
+                >
+                  View on Solscan ↗
+                </a>
+              </div>
+            )}
           </div>
         )}
 

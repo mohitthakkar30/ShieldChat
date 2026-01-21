@@ -137,7 +137,7 @@ export default function ChannelPage() {
     if (heliusConnected) {
       // Helius connected - stop fast polling, use WebSocket for real-time updates
       // Optional: Could keep slow polling (30s) as backup
-      console.log("[Channel] Helius connected, stopping fast polling");
+      // console.log("[Channel] Helius connected, stopping fast polling");
       stopPolling();
     } else {
       // No Helius - use fast polling (3s)
