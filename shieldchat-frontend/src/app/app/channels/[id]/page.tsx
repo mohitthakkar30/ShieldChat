@@ -647,21 +647,26 @@ function MessageBubble({
   }, [onVisible]);
 
   return (
-    <div className="flex items-start space-x-3">
-      <div className="relative">
-        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-sm">
-          {message.sender[0]}
+    <div className={`flex items-end ${isOwnMessage ? 'flex-row-reverse' : ''} gap-3`}>
+      {/* Avatar - only show for other users */}
+      {!isOwnMessage && (
+        <div className="relative flex-shrink-0">
+          <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-sm">
+            {message.sender[0]}
+          </div>
+          {/* Online status indicator */}
+          <div className="absolute -bottom-0.5 -right-0.5">
+            <OnlineStatus isOnline={senderOnline} size="sm" pulse={false} />
+          </div>
         </div>
-        {/* Online status indicator */}
-        <div className="absolute -bottom-0.5 -right-0.5">
-          <OnlineStatus isOnline={senderOnline} size="sm" pulse={false} />
-        </div>
-      </div>
-      <div className="flex-1">
-        <div className="flex items-baseline space-x-2">
-          <span className="font-medium">
-            <WalletAddress address={message.sender} />
-          </span>
+      )}
+      <div className={`max-w-[70%] ${isOwnMessage ? 'items-end' : 'items-start'} flex flex-col`}>
+        <div className={`flex items-baseline gap-2 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
+          {!isOwnMessage && (
+            <span className="font-medium text-sm">
+              <WalletAddress address={message.sender} />
+            </span>
+          )}
           <span className="text-xs text-gray-500">
             {timestamp.toLocaleTimeString()}
           </span>
@@ -670,11 +675,17 @@ function MessageBubble({
             <ReadReceipt sent={true} delivered={true} read={isRead} />
           )}
         </div>
-        <p className="text-gray-300 mt-1">{message.content}</p>
+        <div className={`mt-1 px-4 py-2 rounded-2xl ${
+          isOwnMessage
+            ? 'bg-purple-600 text-white rounded-br-md'
+            : 'bg-gray-700 text-gray-300 rounded-bl-md'
+        }`}>
+          <p className="break-words">{message.content}</p>
+        </div>
 
         {/* Payment Attachment Display */}
         {message.payment && (
-          <div className="mt-2 bg-purple-900/30 border border-purple-500/50 rounded-lg p-3">
+          <div className={`mt-2 bg-purple-900/30 border border-purple-500/50 rounded-lg p-3 max-w-full`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <span className="text-purple-400">💰</span>
