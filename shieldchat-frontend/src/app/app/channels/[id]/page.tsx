@@ -31,6 +31,9 @@ export default function ChannelPage() {
   const router = useRouter();
   const channelId = params.id as string;
 
+  // Track current channel to prevent stale data
+  const currentChannelIdRef = useRef<string | null>(null);
+
   const {
     fetchChannel,
     checkMembership,
@@ -94,6 +97,9 @@ export default function ChannelPage() {
   const [joining, setJoining] = useState(false);
   const hasFetchedMessages = useRef(false);
 
+  // Track which messages have been marked as read to prevent duplicate calls
+  const markedAsReadRef = useRef<Set<string>>(new Set());
+
   // Payment state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
@@ -122,7 +128,23 @@ export default function ChannelPage() {
     isUserOnline,
   } = usePresence(channelPda);
 
-  // Load channel data
+  // Reset all state when channel changes
+  useEffect(() => {
+    currentChannelIdRef.current = channelId;
+    setChannel(null);
+    setMembership(null);
+    setNewMessage("");
+    setSending(false);
+    setJoining(false);
+    setShowPaymentModal(false);
+    setShowInviteModal(false);
+    setShowLeaveModal(false);
+    setPendingPayment(null);
+    hasFetchedMessages.current = false;
+    markedAsReadRef.current = new Set(); // Clear read tracking for new channel
+  }, [channelId]);
+
+  // Load channel data after reset
   useEffect(() => {
     if (channelId) {
       loadChannelData();
@@ -159,19 +181,29 @@ export default function ChannelPage() {
     };
   }, [channelId, channelPda, heliusConnected, startPolling, stopPolling]);
 
-  // Reset fetch flag when channel changes
-  useEffect(() => {
-    hasFetchedMessages.current = false;
-  }, [channelId]);
-
   const loadChannelData = async () => {
+    const loadingChannelId = channelId; // Capture current channelId
     try {
-      const pda = new PublicKey(channelId);
+      const pda = new PublicKey(loadingChannelId);
       const channelData = await fetchChannel(pda);
+
+      // Check if channel changed during fetch
+      if (currentChannelIdRef.current !== loadingChannelId) {
+        console.log("[ChannelPage] Channel changed during load, aborting");
+        return;
+      }
+
       setChannel(channelData);
 
       if (channelData) {
         const memberData = await checkMembership(pda);
+
+        // Check again after membership fetch
+        if (currentChannelIdRef.current !== loadingChannelId) {
+          console.log("[ChannelPage] Channel changed during membership check, aborting");
+          return;
+        }
+
         setMembership(memberData);
       }
     } catch (err) {
@@ -460,16 +492,25 @@ export default function ChannelPage() {
             </div>
           </div>
         ) : (
-          [...messages].reverse().map((message, index) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              isUserOnline={isUserOnline}
-              isOwnMessage={message.sender === publicKey?.toString()}
-              isRead={readReceipts.get(message.sender) !== undefined}
-              onVisible={() => markAsRead(index + 1)}
-            />
-          ))
+          [...messages].reverse().map((message, index) => {
+            const messageKey = message.id;
+            return (
+              <MessageBubble
+                key={messageKey}
+                message={message}
+                isUserOnline={isUserOnline}
+                isOwnMessage={message.sender === publicKey?.toString()}
+                isRead={readReceipts.get(message.sender) !== undefined}
+                onVisible={() => {
+                  // Only mark as read once per message to prevent infinite loops
+                  if (!markedAsReadRef.current.has(messageKey)) {
+                    markedAsReadRef.current.add(messageKey);
+                    markAsRead(index + 1);
+                  }
+                }}
+              />
+            );
+          })
         )}
       </div>
 
@@ -642,10 +683,11 @@ function MessageBubble({
   const timestamp = new Date(message.timestamp);
   const senderOnline = isUserOnline(message.sender);
 
-  // Mark as read when message becomes visible
+  // Mark as read when message becomes visible (run once on mount)
   useEffect(() => {
     onVisible();
-  }, [onVisible]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - only run once when mounted to prevent infinite loop
 
   return (
     <div className={`flex items-end ${isOwnMessage ? 'flex-row-reverse' : ''} gap-3`}>

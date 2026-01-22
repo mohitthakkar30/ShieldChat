@@ -23,6 +23,22 @@ import {
   sendHeartbeat,
 } from "@/lib/magicblock";
 
+// Helper to check if presences changed (shallow comparison)
+function presencesEqual(a: UserPresence[], b: UserPresence[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].wallet !== b[i].wallet ||
+      a[i].isTyping !== b[i].isTyping ||
+      a[i].isOnline !== b[i].isOnline ||
+      a[i].lastReadMessage !== b[i].lastReadMessage
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 interface UsePresenceReturn {
   /** Users currently typing in the channel */
   typingUsers: string[];
@@ -52,6 +68,7 @@ export function usePresence(channelPda: PublicKey | null): UsePresenceReturn {
   const { publicKey } = useWallet();
 
   const [presences, setPresences] = useState<UserPresence[]>([]);
+  const presencesRef = useRef<UserPresence[]>([]); // Track current presences to avoid infinite loops
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -63,11 +80,16 @@ export function usePresence(channelPda: PublicKey | null): UsePresenceReturn {
     if (!channelId) return;
 
     const unsubscribe = subscribeToPresence(channelId, (newPresences) => {
-      setPresences(newPresences);
+      // Only update state if presences actually changed to prevent infinite re-renders
+      if (!presencesEqual(presencesRef.current, newPresences)) {
+        presencesRef.current = newPresences;
+        setPresences(newPresences);
+      }
     });
 
     return () => {
       unsubscribe();
+      presencesRef.current = [];
     };
   }, [channelId]);
 

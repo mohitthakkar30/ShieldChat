@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import { PublicKey, Connection, VersionedTransactionResponse } from "@solana/web3.js";
 import { fetchMessage, IPFSMessage, uploadMessage } from "@/lib/ipfs";
 import { RPC_ENDPOINT, PROGRAM_ID } from "@/lib/constants";
@@ -233,6 +233,26 @@ export function useMessages(channelPda: PublicKey | null) {
   const isFetchingRef = useRef(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Track current channel to prevent stale data from old fetches
+  const currentChannelRef = useRef<string | null>(null);
+
+  // Update current channel ref and clear state when channel changes
+  useEffect(() => {
+    const channelId = channelPda?.toString() || null;
+    currentChannelRef.current = channelId;
+
+    setMessages([]);
+    setError(null);
+    setLoading(false);
+    isFetchingRef.current = false; // Reset fetch lock so new channel can fetch
+
+    // Stop any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, [channelPda?.toString()]);
+
   /**
    * Fetch messages from Solana/IPFS (original flow)
    * Used as fallback when Supabase cache is empty or fails
@@ -458,6 +478,8 @@ export function useMessages(channelPda: PublicKey | null) {
       return [];
     }
 
+    const channelId = channelPda.toString();
+
     // Prevent concurrent fetches
     if (isFetchingRef.current) {
       return [];
@@ -471,12 +493,16 @@ export function useMessages(channelPda: PublicKey | null) {
     setError(null);
 
     try {
-      const channelId = channelPda.toString();
-
       // Try Supabase cache first (fast path)
       if (isSupabaseConfigured()) {
         try {
           const cachedMessages = await fetchMessagesFromCache(channelId);
+
+          // Check if channel changed during fetch
+          if (currentChannelRef.current !== channelId) {
+            console.log("[useMessages] Channel changed during cache fetch, aborting");
+            return [];
+          }
 
           if (cachedMessages.length > 0) {
             console.log(`[useMessages] Using ${cachedMessages.length} cached messages from Supabase`);
@@ -485,6 +511,12 @@ export function useMessages(channelPda: PublicKey | null) {
             const decryptedMessages: ChatMessage[] = [];
 
             for (const cached of cachedMessages) {
+              // Check if channel changed during decryption loop
+              if (currentChannelRef.current !== channelId) {
+                console.log("[useMessages] Channel changed during decryption, aborting");
+                return [];
+              }
+
               let content = "[Encrypted message]";
 
               // Decrypt if we have encrypted data
@@ -507,7 +539,10 @@ export function useMessages(channelPda: PublicKey | null) {
               });
             }
 
-            setMessages(decryptedMessages);
+            // Final check before setting state
+            if (currentChannelRef.current === channelId) {
+              setMessages(decryptedMessages);
+            }
             return decryptedMessages;
           }
         } catch (cacheErr) {
@@ -516,23 +551,35 @@ export function useMessages(channelPda: PublicKey | null) {
         }
       }
 
+      // Check if channel changed before IPFS fallback
+      if (currentChannelRef.current !== channelId) {
+        console.log("[useMessages] Channel changed before IPFS fetch, aborting");
+        return [];
+      }
+
       // Fallback: Fetch from Solana/IPFS
       console.log("[useMessages] Cache miss or not configured, fetching from Solana/IPFS");
       const { messages: parsedMessages, dbMessages } = await fetchFromSolanaAndIPFS();
 
-      setMessages(parsedMessages);
+      // Final check before setting state
+      if (currentChannelRef.current === channelId) {
+        setMessages(parsedMessages);
 
-      // Async: Save to Supabase for next time (non-blocking)
-      if (isSupabaseConfigured() && dbMessages.length > 0) {
-        saveMessagesToCache(dbMessages).catch(err => {
-          console.error("[useMessages] Failed to save to cache:", err);
-        });
+        // Async: Save to Supabase for next time (non-blocking)
+        if (isSupabaseConfigured() && dbMessages.length > 0) {
+          saveMessagesToCache(dbMessages).catch(err => {
+            console.error("[useMessages] Failed to save to cache:", err);
+          });
+        }
       }
 
       return parsedMessages;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to fetch messages";
-      setError(message);
+      // Only set error if still on same channel
+      if (currentChannelRef.current === channelId) {
+        const message = err instanceof Error ? err.message : "Failed to fetch messages";
+        setError(message);
+      }
       return [];
     } finally {
       setLoading(false);
@@ -620,6 +667,14 @@ export function useMessages(channelPda: PublicKey | null) {
         return false;
       }
 
+      const channelId = channelPda.toString();
+
+      // Check if still on same channel
+      if (currentChannelRef.current !== channelId) {
+        console.log("[useMessages] Channel changed, ignoring Helius message");
+        return false;
+      }
+
       // Extract CID from instruction data
       const cid = extractCidFromInstructionData(instructionData);
       if (!cid) {
@@ -637,6 +692,12 @@ export function useMessages(channelPda: PublicKey | null) {
           return false;
         }
 
+        // Check again after IPFS fetch
+        if (currentChannelRef.current !== channelId) {
+          console.log("[useMessages] Channel changed during IPFS fetch, ignoring");
+          return false;
+        }
+
         let content = ipfsMessage.content;
         const senderAddress = sender || "Unknown";
         const messageTimestamp = new Date(timestamp * 1000).toISOString();
@@ -644,12 +705,18 @@ export function useMessages(channelPda: PublicKey | null) {
         // Decrypt if encrypted
         if (ipfsMessage.encrypted && ipfsMessage.encryptedData) {
           try {
-            content = await decryptMessage(ipfsMessage.encryptedData, channelPda.toString());
+            content = await decryptMessage(ipfsMessage.encryptedData, channelId);
             console.log("[useMessages] Decrypted message from Helius");
           } catch (decryptErr) {
             console.error("[useMessages] Failed to decrypt:", decryptErr);
             content = "[Encrypted message - decryption failed]";
           }
+        }
+
+        // Final check before updating state
+        if (currentChannelRef.current !== channelId) {
+          console.log("[useMessages] Channel changed during decryption, ignoring");
+          return false;
         }
 
         // Create the message object
