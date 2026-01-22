@@ -543,6 +543,25 @@ export function useMessages(channelPda: PublicKey | null) {
             if (currentChannelRef.current === channelId) {
               setMessages(decryptedMessages);
             }
+
+            // BACKFILL: Fetch from IPFS in background to sync any missing messages
+            // This runs after returning cached messages for fast initial load
+            const cachedCount = cachedMessages.length;
+            fetchFromSolanaAndIPFS().then(({ messages: ipfsMessages, dbMessages }) => {
+              // Only backfill if still on same channel
+              if (currentChannelRef.current !== channelId) return;
+
+              if (dbMessages.length > cachedCount) {
+                console.log(`[useMessages] Backfilling ${dbMessages.length - cachedCount} missing messages to cache`);
+                saveMessagesToCache(dbMessages);
+
+                // Also update the displayed messages with the full list
+                setMessages(ipfsMessages);
+              }
+            }).catch(err => {
+              console.error("[useMessages] Backfill failed:", err);
+            });
+
             return decryptedMessages;
           }
         } catch (cacheErr) {
