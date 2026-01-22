@@ -65,6 +65,9 @@ const presenceStore = new Map<string, Map<string, UserPresence>>();
 const presenceSubscribers = new Map<string, Set<PresenceCallback>>();
 const subscribedChannels = new Set<string>();
 
+// Message queue for when WebSocket isn't connected yet
+const messageQueue: Record<string, unknown>[] = [];
+
 /**
  * Get or create the ephemeral connection
  */
@@ -148,6 +151,9 @@ function connectWebSocket(): void {
       for (const channelId of subscribedChannels) {
         sendMessage({ type: "subscribe", channelId });
       }
+
+      // Flush any messages that were queued while connecting
+      flushMessageQueue();
     };
 
     presenceWs.onmessage = (event) => {
@@ -178,11 +184,26 @@ function connectWebSocket(): void {
 }
 
 /**
- * Send message to presence server
+ * Send message to presence server (with queuing for when not connected)
  */
 function sendMessage(message: Record<string, unknown>): void {
   if (presenceWs && presenceWs.readyState === WebSocket.OPEN) {
     presenceWs.send(JSON.stringify(message));
+  } else {
+    // Queue the message to send when connected
+    messageQueue.push(message);
+  }
+}
+
+/**
+ * Flush queued messages after WebSocket connects
+ */
+function flushMessageQueue(): void {
+  while (messageQueue.length > 0) {
+    const message = messageQueue.shift();
+    if (message && presenceWs && presenceWs.readyState === WebSocket.OPEN) {
+      presenceWs.send(JSON.stringify(message));
+    }
   }
 }
 
