@@ -470,11 +470,6 @@ export default function ChannelPage() {
             />
           ))
         )}
-
-        {/* Typing Indicator */}
-        {typingUsers.length > 0 && (
-          <TypingIndicator users={typingUsers} />
-        )}
       </div>
 
       {/* Message Input */}
@@ -482,6 +477,13 @@ export default function ChannelPage() {
         <div className="bg-gray-800/50 border-t border-gray-700 p-4">
           {isMember ? (
             <>
+              {/* Typing Indicator */}
+              {typingUsers.length > 0 && (
+                <div className="mb-2">
+                  <TypingIndicator users={typingUsers} />
+                </div>
+              )}
+
               {/* Pending Payment Preview */}
               {pendingPayment && (
                 <div className="mb-3 bg-purple-900/30 border border-purple-500/50 rounded-lg p-3 flex items-center justify-between">
