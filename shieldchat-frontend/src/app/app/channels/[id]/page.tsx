@@ -263,6 +263,7 @@ export default function ChannelPage() {
       await logMessage(channel.publicKey, newMessage.trim(), cid);
 
       setNewMessage("");
+      setTyping(false); // Clear typing indicator immediately
       setPendingPayment(null); // Clear payment after sending
       await loadChannelData(); // Refresh message count
 
