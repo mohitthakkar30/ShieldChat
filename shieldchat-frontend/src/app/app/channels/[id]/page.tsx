@@ -309,7 +309,7 @@ export default function ChannelPage() {
   const canAccess = isOwner || isMember;
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-900">
+    <div className="flex-1 flex flex-col min-h-0 bg-gray-900">
       {/* Channel Header */}
       <div className="bg-gray-800/50 border-b border-gray-700 p-4">
         <div className="flex items-center justify-between">
@@ -403,7 +403,7 @@ export default function ChannelPage() {
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 flex flex-col-reverse">
         {!canAccess ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center max-w-md">
@@ -459,7 +459,7 @@ export default function ChannelPage() {
             </div>
           </div>
         ) : (
-          messages.map((message, index) => (
+          [...messages].reverse().map((message, index) => (
             <MessageBubble
               key={message.id}
               message={message}

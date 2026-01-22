@@ -14,10 +14,13 @@ interface ChannelWithAccess extends Channel {
   hasAccess: boolean;
 }
 
+type FilterType = 'all' | 'public' | 'private' | 'tokenGated' | 'oneToOne';
+
 export function ChannelList({ onCreateChannel }: ChannelListProps) {
   const { fetchAccessibleChannels, loading, connected } = useShieldChat();
   const { publicKey } = useWallet();
   const [channels, setChannels] = useState<ChannelWithAccess[]>([]);
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
 
   useEffect(() => {
     if (connected) {
@@ -53,13 +56,34 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
     setChannels(channelsWithAccess);
   };
 
+  // Filter channels based on selected tab
+  const filteredChannels = useMemo(() => {
+    return channels.filter((channel) => {
+      const channelType = parseChannelType(channel.account.channelType);
+
+      switch (activeFilter) {
+        case 'public':
+          return channelType === 'Public';
+        case 'private':
+          return channelType === 'Private Group' && channel.hasAccess;
+        case 'tokenGated':
+          return channelType === 'Token Gated';
+        case 'oneToOne':
+          return channelType === 'Direct Message' && channel.hasAccess;
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  }, [channels, activeFilter]);
+
   // Group channels by category
   const groupedChannels = useMemo(() => {
     const owned: ChannelWithAccess[] = [];
     const member: ChannelWithAccess[] = [];
     const discover: ChannelWithAccess[] = [];
 
-    channels.forEach((channel) => {
+    filteredChannels.forEach((channel) => {
       if (publicKey && channel.account.owner.equals(publicKey)) {
         owned.push(channel);
       } else if (channel.hasAccess) {
@@ -70,7 +94,7 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
     });
 
     return { owned, member, discover };
-  }, [channels, publicKey]);
+  }, [filteredChannels, publicKey]);
 
   if (!connected) {
     return (
@@ -84,9 +108,10 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
   }
 
   const hasChannels = channels.length > 0;
+  const hasFilteredChannels = filteredChannels.length > 0;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex flex-col h-full">
       {/* Header */}
       <div className="p-3 border-b border-gray-800">
         <button
@@ -111,6 +136,29 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
             </>
           )}
         </button>
+
+        {/* Filter Tabs */}
+        <div className="flex gap-1 mt-2 overflow-x-auto scrollbar-hide">
+          {[
+            { key: 'all' as FilterType, label: 'All' },
+            { key: 'public' as FilterType, label: 'Public' },
+            { key: 'private' as FilterType, label: 'Private' },
+            { key: 'tokenGated' as FilterType, label: 'Gated' },
+            { key: 'oneToOne' as FilterType, label: '1:1' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveFilter(tab.key)}
+              className={`px-3 py-1.5 text-xs rounded-lg whitespace-nowrap transition-all ${
+                activeFilter === tab.key
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Channel List */}
@@ -124,6 +172,16 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
             </div>
             <p className="text-gray-500 text-sm mb-1">No channels yet</p>
             <p className="text-gray-600 text-xs">Create one to get started!</p>
+          </div>
+        ) : !hasFilteredChannels ? (
+          <div className="p-6 text-center">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gray-800/50 flex items-center justify-center">
+              <svg className="w-6 h-6 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+            </div>
+            <p className="text-gray-500 text-sm mb-1">No channels found</p>
+            <p className="text-gray-600 text-xs">Try a different filter</p>
           </div>
         ) : (
           <div className="p-2 space-y-4">

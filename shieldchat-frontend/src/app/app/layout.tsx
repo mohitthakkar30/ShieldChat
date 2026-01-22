@@ -11,6 +11,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { connected, publicKey } = useWallet();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Format wallet address
   const formatWallet = (key: typeof publicKey) => {
@@ -67,11 +68,53 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="h-screen bg-gray-950 flex flex-col md:flex-row overflow-hidden">
+      {/* Mobile Header */}
+      <header className="md:hidden fixed top-0 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-xl border-b border-gray-800 px-4 py-3 flex items-center justify-between">
+        <Link href="/" className="flex items-center space-x-2">
+          <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <span className="font-bold">ShieldChat</span>
+        </Link>
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="p-2 rounded-lg hover:bg-gray-800 transition-colors"
+        >
+          {sidebarOpen ? (
+            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          )}
+        </button>
+      </header>
+
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-30 bg-black/50 backdrop-blur-sm"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-72 bg-gray-900/95 backdrop-blur-xl border-r border-gray-800 flex flex-col">
-        {/* Logo Header */}
-        <div className="p-4 border-b border-gray-800">
+      <aside className={`
+        fixed md:static inset-y-0 left-0 z-40
+        w-72 md:h-screen bg-gray-900/95 backdrop-blur-xl border-r border-gray-800
+        flex flex-col
+        transform transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:translate-x-0
+        pt-16 md:pt-0
+      `}>
+        {/* Logo Header - Hidden on mobile (shown in mobile header) */}
+        <div className="shrink-0 hidden md:block p-4 border-b border-gray-800">
           <Link href="/" className="flex items-center space-x-3 group">
             <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:shadow-purple-500/40 transition-shadow">
               <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -89,9 +132,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Quick Actions */}
-        <div className="p-3 border-b border-gray-800">
+        <div className="shrink-0 p-3 border-b border-gray-800">
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              setShowCreateModal(true);
+              setSidebarOpen(false);
+            }}
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl font-medium transition-all shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -102,12 +148,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Channel List */}
-        <div className="flex-1 overflow-hidden" key={refreshKey}>
-          <ChannelList onCreateChannel={() => setShowCreateModal(true)} />
+        <div className="flex-1 overflow-y-auto min-h-0" key={refreshKey}>
+          <ChannelList onCreateChannel={() => {
+            setShowCreateModal(true);
+            setSidebarOpen(false);
+          }} />
         </div>
 
-        {/* User Section */}
-        <div className="p-4 border-t border-gray-800 bg-gray-900/50">
+        {/* User Section - Desktop only (mobile has fixed footer) */}
+        <div className="shrink-0 hidden md:block p-1 border-t border-gray-800 bg-gray-900/50">
           <div className="flex items-center gap-3 mb-3">
             <div className="relative">
               <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-sm font-bold">
@@ -125,7 +174,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col bg-gray-950">{children}</main>
+      <main className="flex-1 flex flex-col min-h-0 bg-gray-950 pt-14 md:pt-0 pb-20 md:pb-0">
+        {children}
+      </main>
+
+      {/* Mobile Fixed Footer - Wallet Section */}
+      <footer className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-xl border-t border-gray-800 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <div className="relative shrink-0">
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-sm font-bold">
+              {publicKey?.toString()[0] || "?"}
+            </div>
+            <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-gray-900 rounded-full" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-sm truncate">{formatWallet(publicKey)}</div>
+            <div className="text-xs text-gray-500">Online</div>
+          </div>
+          <WalletMultiButton className="!bg-gray-800 hover:!bg-gray-700 !rounded-xl !py-2 !px-4 !text-sm !border !border-gray-700" />
+        </div>
+      </footer>
 
       {/* Create Channel Modal */}
       <CreateChannelModal
