@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useAnchorWallet } from "@solana/wallet-adapter-react";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import * as anchor from "@coral-xyz/anchor";
 import { Buffer } from "buffer";
 import {
@@ -13,7 +13,7 @@ import {
   getChannelTypeArg,
   parseChannelType,
 } from "@/lib/anchor";
-import { getChannelPDA, getMemberPDA } from "@/lib/constants";
+import { getChannelPDA, getMemberPDA, getVaultPDA, getVaultAuthorityPDA, getStakePDA } from "@/lib/constants";
 
 export interface Channel {
   publicKey: PublicKey;
@@ -70,8 +70,6 @@ export function useShieldChat() {
           })
           .rpc({ skipPreflight: true });
 
-        console.log("Channel created and joined:", tx);
-
         return {
           signature: tx,
           channelId: channelId.toString(),
@@ -88,8 +86,80 @@ export function useShieldChat() {
     [anchorWallet, publicKey]
   );
 
+  // Internal helper to rejoin a channel (when member account exists but is inactive)
+  const rejoinChannelInternal = async (
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    program: any,
+    channelPda: PublicKey,
+    memberPda: PublicKey,
+    userTokenAccount?: PublicKey
+  ) => {
+    if (!publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    // Build accounts object
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const accounts: any = {
+      channel: channelPda,
+      member: memberPda,
+      memberWallet: publicKey,
+      systemProgram: SystemProgram.programId,
+    };
+
+    // Add staking accounts for token-gated channels
+    if (userTokenAccount) {
+      // Fetch channel to get token mint
+      const channel = await (program.account as Record<string, unknown> & { channel: { fetch: (key: PublicKey) => Promise<ChannelAccount> } }).channel.fetch(channelPda);
+      const tokenMint = channel.requiredTokenMint;
+
+      if (tokenMint) {
+        // Derive vault PDAs
+        const [vaultPda] = getVaultPDA(channelPda);
+        const [stakePda] = getStakePDA(channelPda, publicKey);
+
+        // Get vault token account
+        const vaultTokenAccount = getAssociatedTokenAddressSync(
+          tokenMint,
+          getVaultAuthorityPDA(channelPda, tokenMint)[0],
+          true
+        );
+
+        accounts.userTokenAccount = userTokenAccount;
+        accounts.tokenVault = vaultPda;
+        accounts.vaultTokenAccount = vaultTokenAccount;
+        accounts.memberStake = stakePda;
+        accounts.tokenProgram = TOKEN_PROGRAM_ID;
+      } else {
+        accounts.userTokenAccount = null;
+        accounts.tokenVault = null;
+        accounts.vaultTokenAccount = null;
+        accounts.memberStake = null;
+        accounts.tokenProgram = null;
+      }
+    } else {
+      // Non-token-gated channel
+      accounts.userTokenAccount = null;
+      accounts.tokenVault = null;
+      accounts.vaultTokenAccount = null;
+      accounts.memberStake = null;
+      accounts.tokenProgram = null;
+    }
+
+    const tx = await program.methods
+      .rejoinChannel()
+      .accounts(accounts)
+      .rpc({ skipPreflight: !!userTokenAccount });
+
+    return {
+      signature: tx,
+      memberPda,
+    };
+  };
+
   // Join an existing channel
   // For token-gated channels, pass the user's token account pubkey
+  // Tokens will be staked (transferred to vault) for token-gated channels
   const joinChannel = useCallback(
     async (channelPda: PublicKey, userTokenAccount?: PublicKey) => {
       if (!anchorWallet || !publicKey) {
@@ -105,17 +175,20 @@ export function useShieldChat() {
         // Get member PDA
         const [memberPda] = getMemberPDA(channelPda, publicKey);
 
-        // Check if member account already exists
+        // Check if member account already exists and is active
         try {
-          const existingMember = await (program.account as Record<string, unknown> & { member: { fetch: (key: PublicKey) => Promise<unknown> } }).member.fetch(memberPda);
-          if (existingMember) {
-            console.log("Member already exists, skipping join");
+          const existingMember = await (program.account as Record<string, unknown> & { member: { fetch: (key: PublicKey) => Promise<MemberAccount> } }).member.fetch(memberPda);
+          if (existingMember && existingMember.isActive) {
             return {
               signature: "already_member",
               memberPda,
             };
           }
-        } catch {
+          // Member exists but is inactive (left the channel) - use rejoinChannel
+          if (existingMember && !existingMember.isActive) {
+            return await rejoinChannelInternal(program, channelPda, memberPda, userTokenAccount);
+          }
+        } catch (err) {
           // Member doesn't exist, proceed with joining
         }
 
@@ -128,22 +201,46 @@ export function useShieldChat() {
           systemProgram: SystemProgram.programId,
         };
 
-        // Add token accounts if provided (required for token-gated channels)
+        // Add staking accounts for token-gated channels
         if (userTokenAccount) {
-          accounts.userTokenAccount = userTokenAccount;
-          accounts.tokenProgram = TOKEN_PROGRAM_ID;
+          // Fetch channel to get token mint
+          const channel = await (program.account as Record<string, unknown> & { channel: { fetch: (key: PublicKey) => Promise<ChannelAccount> } }).channel.fetch(channelPda);
+          const tokenMint = channel.requiredTokenMint;
+
+          if (tokenMint) {
+            // Derive vault PDAs
+            const [vaultPda] = getVaultPDA(channelPda);
+            const [vaultAuthority] = getVaultAuthorityPDA(channelPda, tokenMint);
+            const [stakePda] = getStakePDA(channelPda, publicKey);
+
+            // Get vault token account
+            const vaultTokenAccount = getAssociatedTokenAddressSync(
+              tokenMint,
+              vaultAuthority,
+              true
+            );
+
+            accounts.userTokenAccount = userTokenAccount;
+            accounts.tokenVault = vaultPda;
+            accounts.vaultTokenAccount = vaultTokenAccount;
+            accounts.memberStake = stakePda;
+            accounts.tokenProgram = TOKEN_PROGRAM_ID;
+          }
         } else {
+          // Non-token-gated channel
           accounts.userTokenAccount = null;
+          accounts.tokenVault = null;
+          accounts.vaultTokenAccount = null;
+          accounts.memberStake = null;
           accounts.tokenProgram = null;
         }
 
-        // Join channel
+        // Join channel (tokens will be staked if token-gated)
+        // Use skipPreflight for token-gated channels because we're initializing new accounts
         const tx = await program.methods
           .joinChannel()
           .accounts(accounts)
-          .rpc();
-
-        console.log("Joined channel:", tx);
+          .rpc({ skipPreflight: !!userTokenAccount });
 
         return {
           signature: tx,
@@ -205,8 +302,6 @@ export function useShieldChat() {
           })
           .rpc({ skipPreflight: true });
 
-        console.log("Message logged:", tx);
-
         return {
           signature: tx,
           messageHash,
@@ -224,8 +319,9 @@ export function useShieldChat() {
   );
 
   // Leave a channel
+  // For token-gated channels, staked tokens will be returned
   const leaveChannel = useCallback(
-    async (channelPda: PublicKey) => {
+    async (channelPda: PublicKey, userTokenAccount?: PublicKey) => {
       if (!anchorWallet || !publicKey) {
         throw new Error("Wallet not connected");
       }
@@ -239,17 +335,52 @@ export function useShieldChat() {
         // Get member PDA
         const [memberPda] = getMemberPDA(channelPda, publicKey);
 
-        // Leave channel
+        // Build accounts object
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const accounts: any = {
+          channel: channelPda,
+          member: memberPda,
+          memberWallet: publicKey,
+        };
+
+        // Check if this is a token-gated channel with staking
+        const channel = await (program.account as Record<string, unknown> & { channel: { fetch: (key: PublicKey) => Promise<ChannelAccount> } }).channel.fetch(channelPda);
+        const tokenMint = channel.requiredTokenMint;
+
+        if (tokenMint && userTokenAccount) {
+          // Derive vault PDAs for unstaking
+          const [vaultPda] = getVaultPDA(channelPda);
+          const [vaultAuthority] = getVaultAuthorityPDA(channelPda, tokenMint);
+          const [stakePda] = getStakePDA(channelPda, publicKey);
+
+          // Get vault token account
+          const vaultTokenAccount = getAssociatedTokenAddressSync(
+            tokenMint,
+            vaultAuthority,
+            true
+          );
+
+          accounts.tokenVault = vaultPda;
+          accounts.vaultAuthority = vaultAuthority;
+          accounts.vaultTokenAccount = vaultTokenAccount;
+          accounts.userTokenAccount = userTokenAccount;
+          accounts.memberStake = stakePda;
+          accounts.tokenProgram = TOKEN_PROGRAM_ID;
+        } else {
+          // Non-token-gated channel
+          accounts.tokenVault = null;
+          accounts.vaultAuthority = null;
+          accounts.vaultTokenAccount = null;
+          accounts.userTokenAccount = null;
+          accounts.memberStake = null;
+          accounts.tokenProgram = null;
+        }
+
+        // Leave channel (tokens will be unstaked if token-gated)
         const tx = await program.methods
           .leaveChannel()
-          .accounts({
-            channel: channelPda,
-            member: memberPda,
-            memberWallet: publicKey,
-          })
+          .accounts(accounts)
           .rpc();
-
-        console.log("Left channel:", tx);
 
         return {
           signature: tx,
@@ -286,13 +417,66 @@ export function useShieldChat() {
           })
           .rpc();
 
-        console.log("Token gate set:", tx);
-
         return {
           signature: tx,
         };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Failed to set token gate";
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [anchorWallet, publicKey]
+  );
+
+  // Initialize token vault for staking (owner only, after setTokenGate)
+  const initializeVault = useCallback(
+    async (channelPda: PublicKey, tokenMint: PublicKey) => {
+      if (!anchorWallet || !publicKey) {
+        throw new Error("Wallet not connected");
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const program = getProgram(anchorWallet);
+
+        // Derive vault PDAs
+        const [vaultPda] = getVaultPDA(channelPda);
+        const [vaultAuthority] = getVaultAuthorityPDA(channelPda, tokenMint);
+
+        // Get the associated token account for the vault
+        const vaultTokenAccount = getAssociatedTokenAddressSync(
+          tokenMint,
+          vaultAuthority,
+          true // allowOwnerOffCurve - required for PDA owners
+        );
+
+        const tx = await program.methods
+          .initializeVault()
+          .accounts({
+            channel: channelPda,
+            tokenVault: vaultPda,
+            vaultAuthority,
+            vaultTokenAccount,
+            tokenMint,
+            owner: publicKey,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+
+        return {
+          signature: tx,
+          vaultPda,
+          vaultTokenAccount,
+        };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to initialize vault";
         setError(message);
         throw err;
       } finally {
@@ -383,17 +567,23 @@ export function useShieldChat() {
       const accessibleChannels: Channel[] = [];
       const privateChannelsToCheck: Array<{ channel: Channel; memberPda: PublicKey }> = [];
 
-      // First pass: add public channels and owner's channels immediately
+      // First pass: add public, token-gated, and owner's channels immediately
       for (const c of allChannels) {
         const channel = c.account as ChannelAccount;
         const channelType = parseChannelType(channel.channelType);
 
         if (channelType === "Public") {
+          // Public channels visible to all
+          accessibleChannels.push({ publicKey: c.publicKey, account: channel });
+        } else if (channelType === "Token Gated") {
+          // Token-gated channels visible to all for discovery
+          // Users can see requirements but need tokens to join
           accessibleChannels.push({ publicKey: c.publicKey, account: channel });
         } else if (channel.owner.equals(publicKey)) {
+          // Owner can see their own channels
           accessibleChannels.push({ publicKey: c.publicKey, account: channel });
         } else {
-          // Need to check membership - collect for batch fetch
+          // Private/DM channels - need to check membership
           const [memberPda] = getMemberPDA(c.publicKey, publicKey);
           privateChannelsToCheck.push({
             channel: { publicKey: c.publicKey, account: channel },
@@ -492,6 +682,7 @@ export function useShieldChat() {
     logMessage,
     leaveChannel,
     setTokenGate,
+    initializeVault,
 
     // Queries
     fetchMyChannels,

@@ -42,7 +42,7 @@ export interface DbMessage {
 export function isSupabaseConfigured(): boolean {
   const configured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   if (!configured) {
-    console.log("[Supabase] Not configured - URL:", !!SUPABASE_URL, "Key:", !!SUPABASE_ANON_KEY);
+    // console.log("[Supabase] Not configured - URL:", !!SUPABASE_URL, "Key:", !!SUPABASE_ANON_KEY);
   }
   return configured;
 }
@@ -55,11 +55,11 @@ export async function fetchMessagesFromCache(
   channelId: string
 ): Promise<DbMessage[]> {
   if (!isSupabaseConfigured()) {
-    console.log("[Supabase] Not configured, skipping cache fetch");
+    // console.log("[Supabase] Not configured, skipping cache fetch");
     return [];
   }
 
-  console.log("[Supabase] Fetching messages for channel:", channelId.slice(0, 12) + "...");
+  // console.log("[Supabase] Fetching messages for channel:", channelId.slice(0, 12) + "...");
 
   try {
     const { data, error } = await supabase
@@ -73,9 +73,9 @@ export async function fetchMessagesFromCache(
       return [];
     }
 
-    console.log(`[Supabase] Fetched ${data?.length || 0} messages from cache for channel`);
+    // console.log(`[Supabase] Fetched ${data?.length || 0} messages from cache for channel`);
     if (data && data.length > 0) {
-      console.log("[Supabase] First cached message:", JSON.stringify(data[0]).slice(0, 200));
+      // console.log("[Supabase] First cached message:", JSON.stringify(data[0]).slice(0, 200));
     }
     return data || [];
   } catch (err) {
@@ -135,11 +135,11 @@ export async function saveMessageToCache(message: DbMessage): Promise<boolean> {
  */
 export async function saveMessagesToCache(messages: DbMessage[]): Promise<void> {
   if (!isSupabaseConfigured() || messages.length === 0) {
-    console.log("[Supabase] Skipping save - configured:", isSupabaseConfigured(), "messages:", messages.length);
+    // console.log("[Supabase] Skipping save - configured:", isSupabaseConfigured(), "messages:", messages.length);
     return;
   }
 
-  console.log("[Supabase] Attempting to save", messages.length, "messages to cache");
+  // console.log("[Supabase] Attempting to save", messages.length, "messages to cache");
 
   try {
     const payload = messages.map(m => ({
@@ -153,7 +153,7 @@ export async function saveMessagesToCache(messages: DbMessage[]): Promise<void> 
       timestamp: m.timestamp,
     }));
 
-    console.log("[Supabase] Save payload sample:", JSON.stringify(payload[0]).slice(0, 200));
+    // console.log("[Supabase] Save payload sample:", JSON.stringify(payload[0]).slice(0, 200));
 
     const { data, error } = await supabase
       .from("messages")
@@ -166,7 +166,7 @@ export async function saveMessagesToCache(messages: DbMessage[]): Promise<void> 
     if (error) {
       console.error("[Supabase] Batch save error:", error.code, error.message, error.details);
     } else {
-      console.log(`[Supabase] Successfully saved ${data?.length || 0} messages to cache`);
+      // console.log(`[Supabase] Successfully saved ${data?.length || 0} messages to cache`);
     }
   } catch (err) {
     console.error("[Supabase] Batch save failed:", err);
@@ -218,7 +218,7 @@ export async function clearChannelCache(channelId: string): Promise<boolean> {
       return false;
     }
 
-    console.log(`[Supabase] Cleared cache for channel: ${channelId.slice(0, 8)}...`);
+    // console.log(`[Supabase] Cleared cache for channel: ${channelId.slice(0, 8)}...`);
     return true;
   } catch (err) {
     console.error("[Supabase] Cache clear failed:", err);
@@ -314,7 +314,7 @@ export async function createInvite(
       return null;
     }
 
-    console.log(`[Supabase] Created invite ${code} for channel ${channelPda.slice(0, 8)}...`);
+    // console.log(`[Supabase] Created invite ${code} for channel ${channelPda.slice(0, 8)}...`);
     return data;
   } catch (err) {
     console.error("[Supabase] Create invite failed:", err);
@@ -340,19 +340,19 @@ export async function getInviteByCode(code: string): Promise<DbInvite | null> {
       .single();
 
     if (error || !data) {
-      console.log("[Supabase] Invite not found:", code);
+      // console.log("[Supabase] Invite not found:", code);
       return null;
     }
 
     // Check expiration
     if (data.expires_at && new Date(data.expires_at) < new Date()) {
-      console.log("[Supabase] Invite expired:", code);
+      // console.log("[Supabase] Invite expired:", code);
       return null;
     }
 
     // Check usage limit
     if (data.max_uses !== null && data.used_count >= data.max_uses) {
-      console.log("[Supabase] Invite maxed out:", code);
+      // console.log("[Supabase] Invite maxed out:", code);
       return null;
     }
 
@@ -392,7 +392,7 @@ export async function redeemInvite(
       .single();
 
     if (existingRedemption) {
-      console.log("[Supabase] User already redeemed this invite");
+      // console.log("[Supabase] User already redeemed this invite");
       // Still return success - they can join the channel
       return { channelPda: invite.channel_pda, invite };
     }
@@ -420,7 +420,7 @@ export async function redeemInvite(
       console.error("[Supabase] Error updating invite count:", updateError.message);
     }
 
-    console.log(`[Supabase] Invite ${code} redeemed by ${redeemedBy.slice(0, 8)}...`);
+    // console.log(`[Supabase] Invite ${code} redeemed by ${redeemedBy.slice(0, 8)}...`);
     return { channelPda: invite.channel_pda, invite };
   } catch (err) {
     console.error("[Supabase] Redeem invite failed:", err);
@@ -447,7 +447,7 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
       return false;
     }
 
-    console.log(`[Supabase] Revoked invite: ${inviteId}`);
+    // console.log(`[Supabase] Revoked invite: ${inviteId}`);
     return true;
   } catch (err) {
     console.error("[Supabase] Revoke invite failed:", err);

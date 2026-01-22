@@ -4,14 +4,20 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useShieldChat, Channel } from "@/hooks/useShieldChat";
 import { parseChannelType } from "@/lib/anchor";
+import { useWallet } from "@solana/wallet-adapter-react";
 
 interface ChannelListProps {
   onCreateChannel: () => void;
 }
 
+interface ChannelWithAccess extends Channel {
+  hasAccess: boolean;
+}
+
 export function ChannelList({ onCreateChannel }: ChannelListProps) {
   const { fetchAccessibleChannels, loading, connected } = useShieldChat();
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const { publicKey } = useWallet();
+  const [channels, setChannels] = useState<ChannelWithAccess[]>([]);
 
   useEffect(() => {
     if (connected) {
@@ -20,10 +26,42 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
   }, [connected]);
 
   const loadChannels = async () => {
-    // Only fetch channels the user can access (owner or member)
-    // Private channels are hidden from non-members
+    if (!publicKey) return;
+
+    // Fetch accessible channels (includes token-gated for discovery)
     const result = await fetchAccessibleChannels();
-    setChannels(result);
+
+    // Determine access for each channel
+    const channelsWithAccess: ChannelWithAccess[] = result.map((channel) => {
+      // Owner always has access
+      const isOwner = channel.account.owner.equals(publicKey);
+      if (isOwner) {
+        return { ...channel, hasAccess: true };
+      }
+
+      // For non-token-gated channels in this list, user must be a member
+      // (fetchAccessibleChannels already filters private channels by membership)
+      const isTokenGated = !!channel.account.requiredTokenMint;
+      const channelType = parseChannelType(channel.account.channelType);
+
+      // Public channels - everyone has access to view stats
+      if (channelType === "Public") {
+        return { ...channel, hasAccess: true };
+      }
+
+      // Token-gated channels shown for discovery - user may not have access yet
+      // We need to check membership. For now, assume no access if token-gated and not owner
+      // The channel page will do the actual membership check
+      if (isTokenGated) {
+        // For simplicity, hide stats in the list - they'll see full info on the channel page
+        return { ...channel, hasAccess: false };
+      }
+
+      // Private channels - if in the list, user is a member
+      return { ...channel, hasAccess: true };
+    });
+
+    setChannels(channelsWithAccess);
   };
 
   if (!connected) {
@@ -66,7 +104,7 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
         ) : (
           <div className="p-2 space-y-1">
             {channels.map((channel) => (
-              <ChannelCard key={channel.publicKey.toString()} channel={channel} />
+              <ChannelCard key={channel.publicKey.toString()} channel={channel} hasAccess={channel.hasAccess} />
             ))}
           </div>
         )}
@@ -75,13 +113,14 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
   );
 }
 
-function ChannelCard({ channel }: { channel: Channel }) {
+function ChannelCard({ channel, hasAccess }: { channel: Channel; hasAccess: boolean }) {
   // Decode metadata (simple UTF-8 for now)
   const channelName = new TextDecoder().decode(
     new Uint8Array(channel.account.encryptedMetadata)
   );
 
   const channelType = parseChannelType(channel.account.channelType);
+  const isTokenGated = !!channel.account.requiredTokenMint;
 
   return (
     <Link
@@ -90,19 +129,41 @@ function ChannelCard({ channel }: { channel: Channel }) {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-            <span className="text-lg">#</span>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+            isTokenGated
+              ? "bg-gradient-to-br from-yellow-500 to-orange-500"
+              : "bg-gradient-to-br from-purple-500 to-pink-500"
+          }`}>
+            <span className="text-lg">{isTokenGated ? "🎫" : "#"}</span>
           </div>
           <div>
-            <div className="font-medium">{channelName || "Unnamed Channel"}</div>
+            <div className="font-medium flex items-center gap-2">
+              {channelName || "Unnamed Channel"}
+              {isTokenGated && (
+                <span className="text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded border border-yellow-500/30">
+                  Token Gated
+                </span>
+              )}
+            </div>
             <div className="text-xs text-gray-500">
-              {channelType} • {channel.account.memberCount} members
+              {channelType}
+              {hasAccess ? (
+                <> • {channel.account.memberCount} members</>
+              ) : (
+                <> • <span className="text-gray-600">Join to see activity</span></>
+              )}
             </div>
           </div>
         </div>
-        <div className="text-xs text-gray-500">
-          {channel.account.messageCount.toString()} msgs
-        </div>
+        {hasAccess ? (
+          <div className="text-xs text-gray-500">
+            {channel.account.messageCount.toString()} msgs
+          </div>
+        ) : (
+          <div className="text-xs text-yellow-500">
+            🔒
+          </div>
+        )}
       </div>
     </Link>
   );

@@ -1,11 +1,15 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount};
+use anchor_spl::token::{transfer, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::associated_token::AssociatedToken;
 
 declare_id!("FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN");
 
 // ==================== CONSTANTS ====================
 pub const CHANNEL_SEED: &[u8] = b"channel";
 pub const MEMBER_SEED: &[u8] = b"member";
+pub const VAULT_SEED: &[u8] = b"vault";
+pub const VAULT_AUTH_SEED: &[u8] = b"vault_auth";
+pub const STAKE_SEED: &[u8] = b"stake";
 pub const MAX_METADATA_SIZE: usize = 512;
 pub const MAX_MEMBERS: u16 = 100;
 
@@ -92,8 +96,8 @@ pub mod shield_chat {
         Ok(())
     }
 
-    /// Add member to channel with optional token-gating
-    /// If channel has token requirements, user must provide their token account
+    /// Add member to channel with optional token-gating and staking
+    /// If channel has token requirements, tokens are transferred to vault and locked
     pub fn join_channel(
         ctx: Context<JoinChannel>,
     ) -> Result<()> {
@@ -106,7 +110,7 @@ pub mod shield_chat {
             ErrorCode::ChannelFull
         );
 
-        // Token-gating check (if channel requires it)
+        // Token-gating with staking (if channel requires it)
         if let (Some(required_mint), Some(min_amount)) =
             (channel.required_token_mint, channel.min_token_amount)
         {
@@ -133,8 +137,44 @@ pub mod shield_chat {
                 ErrorCode::InsufficientTokens
             );
 
-            msg!("Token gate verified: {} >= {} required",
-                 user_token_account.amount, min_amount);
+            // Get vault and stake accounts for token transfer
+            let vault_token_account = ctx.accounts.vault_token_account
+                .as_ref()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+            let vault = ctx.accounts.token_vault
+                .as_mut()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+            let stake = ctx.accounts.member_stake
+                .as_mut()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+            let token_program = ctx.accounts.token_program
+                .as_ref()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+
+            // Transfer tokens from user to vault (user signs, so no PDA signer needed)
+            let transfer_ctx = CpiContext::new(
+                token_program.to_account_info(),
+                Transfer {
+                    from: user_token_account.to_account_info(),
+                    to: vault_token_account.to_account_info(),
+                    authority: ctx.accounts.member_wallet.to_account_info(),
+                },
+            );
+            transfer(transfer_ctx, min_amount)?;
+
+            // Update vault state
+            vault.total_locked = vault.total_locked
+                .checked_add(min_amount)
+                .ok_or(ErrorCode::Overflow)?;
+
+            // Initialize stake record
+            stake.member = ctx.accounts.member_wallet.key();
+            stake.channel = channel.key();
+            stake.locked_amount = min_amount;
+            stake.lock_timestamp = Clock::get()?.unix_timestamp;
+            stake.bump = ctx.bumps.member_stake.unwrap();
+
+            msg!("Staked {} tokens to vault", min_amount);
         }
 
         let clock = Clock::get()?;
@@ -216,6 +256,7 @@ pub mod shield_chat {
     }
 
     /// Leave channel (member removes themselves)
+    /// Returns staked tokens if this was a token-gated channel
     pub fn leave_channel(
         ctx: Context<LeaveChannel>,
     ) -> Result<()> {
@@ -225,8 +266,154 @@ pub mod shield_chat {
         member.is_active = false;
         channel.member_count = channel.member_count.saturating_sub(1);
 
+        // Return staked tokens if this was a token-gated channel with staking
+        if let Some(stake) = ctx.accounts.member_stake.as_mut() {
+            if stake.locked_amount > 0 {
+                let vault = ctx.accounts.token_vault
+                    .as_mut()
+                    .ok_or(ErrorCode::TokenAccountRequired)?;
+                let vault_token_account = ctx.accounts.vault_token_account
+                    .as_ref()
+                    .ok_or(ErrorCode::TokenAccountRequired)?;
+                let user_token_account = ctx.accounts.user_token_account
+                    .as_ref()
+                    .ok_or(ErrorCode::TokenAccountRequired)?;
+                let vault_authority = ctx.accounts.vault_authority
+                    .as_ref()
+                    .ok_or(ErrorCode::TokenAccountRequired)?;
+                let token_program = ctx.accounts.token_program
+                    .as_ref()
+                    .ok_or(ErrorCode::TokenAccountRequired)?;
+
+                let locked_amount = stake.locked_amount;
+
+                // PDA signer seeds for vault authority
+                let channel_key = channel.key();
+                let mint_key = vault.token_mint;
+                let seeds = &[
+                    VAULT_AUTH_SEED,
+                    channel_key.as_ref(),
+                    mint_key.as_ref(),
+                    &[vault.auth_bump],
+                ];
+                let signer_seeds = &[&seeds[..]];
+
+                // Transfer tokens back to user (vault authority signs as PDA)
+                let transfer_ctx = CpiContext::new_with_signer(
+                    token_program.to_account_info(),
+                    Transfer {
+                        from: vault_token_account.to_account_info(),
+                        to: user_token_account.to_account_info(),
+                        authority: vault_authority.to_account_info(),
+                    },
+                    signer_seeds,
+                );
+                transfer(transfer_ctx, locked_amount)?;
+
+                // Update vault state
+                vault.total_locked = vault.total_locked.saturating_sub(locked_amount);
+
+                // Clear stake record
+                stake.locked_amount = 0;
+
+                msg!("Returned {} tokens to member", locked_amount);
+            }
+        }
+
         msg!("Member left: {}", member.wallet);
         msg!("Remaining members: {}", channel.member_count);
+
+        Ok(())
+    }
+
+    /// Rejoin a channel that was previously left
+    /// Reactivates an existing inactive member account
+    /// For token-gated channels, requires staking tokens again
+    pub fn rejoin_channel(ctx: Context<RejoinChannel>) -> Result<()> {
+        let channel = &mut ctx.accounts.channel;
+        let member = &mut ctx.accounts.member;
+
+        require!(channel.is_active, ErrorCode::ChannelInactive);
+        require!(!member.is_active, ErrorCode::MemberAlreadyActive);
+        require!(
+            channel.member_count < MAX_MEMBERS,
+            ErrorCode::ChannelFull
+        );
+
+        // Token-gating with staking (if channel requires it)
+        if let (Some(required_mint), Some(min_amount)) =
+            (channel.required_token_mint, channel.min_token_amount)
+        {
+            // Token account is required for token-gated channels
+            let user_token_account = ctx.accounts.user_token_account
+                .as_ref()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+
+            // Verify token account belongs to the joining wallet
+            require!(
+                user_token_account.owner == ctx.accounts.member_wallet.key(),
+                ErrorCode::TokenAccountOwnerMismatch
+            );
+
+            // Verify token account is for the correct mint
+            require!(
+                user_token_account.mint == required_mint,
+                ErrorCode::TokenMintMismatch
+            );
+
+            // Verify sufficient balance
+            require!(
+                user_token_account.amount >= min_amount,
+                ErrorCode::InsufficientTokens
+            );
+
+            // Get vault and stake accounts for token transfer
+            let vault_token_account = ctx.accounts.vault_token_account
+                .as_ref()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+            let vault = ctx.accounts.token_vault
+                .as_mut()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+            let stake = ctx.accounts.member_stake
+                .as_mut()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+            let token_program = ctx.accounts.token_program
+                .as_ref()
+                .ok_or(ErrorCode::TokenAccountRequired)?;
+
+            // Transfer tokens from user to vault
+            let transfer_ctx = CpiContext::new(
+                token_program.to_account_info(),
+                Transfer {
+                    from: user_token_account.to_account_info(),
+                    to: vault_token_account.to_account_info(),
+                    authority: ctx.accounts.member_wallet.to_account_info(),
+                },
+            );
+            transfer(transfer_ctx, min_amount)?;
+
+            // Update vault state
+            vault.total_locked = vault.total_locked
+                .checked_add(min_amount)
+                .ok_or(ErrorCode::Overflow)?;
+
+            // Update stake record (reuse existing account)
+            stake.locked_amount = min_amount;
+            stake.lock_timestamp = Clock::get()?.unix_timestamp;
+
+            msg!("Staked {} tokens to vault for rejoin", min_amount);
+        }
+
+        let clock = Clock::get()?;
+
+        // Reactivate member
+        member.is_active = true;
+        member.joined_at = clock.unix_timestamp;
+
+        channel.member_count += 1;
+
+        msg!("Member rejoined: {}", member.wallet);
+        msg!("Total members: {}", channel.member_count);
 
         Ok(())
     }
@@ -244,6 +431,29 @@ pub mod shield_chat {
 
         msg!("Token gate set: {} tokens required", min_token_amount);
         msg!("Token mint: {}", required_token_mint);
+
+        Ok(())
+    }
+
+    /// Initialize token vault for staking (owner only, after set_token_gate)
+    /// Creates a vault PDA and associated token account to hold staked tokens
+    pub fn initialize_vault(ctx: Context<InitializeVault>) -> Result<()> {
+        let channel = &ctx.accounts.channel;
+        let vault = &mut ctx.accounts.token_vault;
+
+        require!(
+            channel.required_token_mint.is_some(),
+            ErrorCode::NotTokenGatedChannel
+        );
+
+        vault.channel = channel.key();
+        vault.token_mint = channel.required_token_mint.unwrap();
+        vault.total_locked = 0;
+        vault.bump = ctx.bumps.token_vault;
+        vault.auth_bump = ctx.bumps.vault_authority;
+
+        msg!("Token vault initialized for channel: {}", channel.key());
+        msg!("Vault token account: {}", ctx.accounts.vault_token_account.key());
 
         Ok(())
     }
@@ -314,10 +524,32 @@ pub struct JoinChannel<'info> {
     pub member_wallet: Signer<'info>,
 
     /// User's token account (required for token-gated channels)
-    /// Optional: only needed when joining a token-gated channel
+    #[account(mut)]
     pub user_token_account: Option<Account<'info, TokenAccount>>,
 
-    /// SPL Token program (required when user_token_account is provided)
+    /// Token vault account (required for token-gated channels)
+    #[account(
+        mut,
+        seeds = [VAULT_SEED, channel.key().as_ref()],
+        bump = token_vault.bump
+    )]
+    pub token_vault: Option<Account<'info, TokenVault>>,
+
+    /// Vault's token account to receive staked tokens
+    #[account(mut)]
+    pub vault_token_account: Option<Account<'info, TokenAccount>>,
+
+    /// Member stake record (created for token-gated channels)
+    #[account(
+        init,
+        payer = member_wallet,
+        space = 8 + MemberStake::LEN,
+        seeds = [STAKE_SEED, channel.key().as_ref(), member_wallet.key().as_ref()],
+        bump
+    )]
+    pub member_stake: Option<Account<'info, MemberStake>>,
+
+    /// SPL Token program (required for token-gated channels)
     pub token_program: Option<Program<'info, Token>>,
 
     pub system_program: Program<'info, System>,
@@ -360,6 +592,78 @@ pub struct LeaveChannel<'info> {
     pub member: Account<'info, Member>,
 
     pub member_wallet: Signer<'info>,
+
+    /// Token vault account (for returning staked tokens)
+    #[account(mut)]
+    pub token_vault: Option<Account<'info, TokenVault>>,
+
+    /// CHECK: PDA authority for vault token transfers
+    pub vault_authority: Option<UncheckedAccount<'info>>,
+
+    /// Vault's token account (source of returned tokens)
+    #[account(mut)]
+    pub vault_token_account: Option<Account<'info, TokenAccount>>,
+
+    /// User's token account (destination for returned tokens)
+    #[account(mut)]
+    pub user_token_account: Option<Account<'info, TokenAccount>>,
+
+    /// Member stake record
+    #[account(
+        mut,
+        seeds = [STAKE_SEED, channel.key().as_ref(), member_wallet.key().as_ref()],
+        bump = member_stake.bump
+    )]
+    pub member_stake: Option<Account<'info, MemberStake>>,
+
+    /// SPL Token program
+    pub token_program: Option<Program<'info, Token>>,
+}
+
+#[derive(Accounts)]
+pub struct RejoinChannel<'info> {
+    #[account(mut)]
+    pub channel: Account<'info, Channel>,
+
+    #[account(
+        mut,
+        seeds = [MEMBER_SEED, channel.key().as_ref(), member_wallet.key().as_ref()],
+        bump = member.bump,
+        constraint = member.wallet == member_wallet.key() @ ErrorCode::UnauthorizedSender
+    )]
+    pub member: Account<'info, Member>,
+
+    #[account(mut)]
+    pub member_wallet: Signer<'info>,
+
+    /// User's token account (required for token-gated channels)
+    #[account(mut)]
+    pub user_token_account: Option<Account<'info, TokenAccount>>,
+
+    /// Token vault account (required for token-gated channels)
+    #[account(
+        mut,
+        seeds = [VAULT_SEED, channel.key().as_ref()],
+        bump = token_vault.bump
+    )]
+    pub token_vault: Option<Account<'info, TokenVault>>,
+
+    /// Vault's token account to receive staked tokens
+    #[account(mut)]
+    pub vault_token_account: Option<Account<'info, TokenAccount>>,
+
+    /// Member stake record (already exists from previous join)
+    #[account(
+        mut,
+        seeds = [STAKE_SEED, channel.key().as_ref(), member_wallet.key().as_ref()],
+        bump = member_stake.bump
+    )]
+    pub member_stake: Option<Account<'info, MemberStake>>,
+
+    /// SPL Token program (required for token-gated channels)
+    pub token_program: Option<Program<'info, Token>>,
+
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -371,6 +675,48 @@ pub struct SetTokenGate<'info> {
     pub channel: Account<'info, Channel>,
 
     pub owner: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeVault<'info> {
+    #[account(
+        constraint = channel.required_token_mint.is_some() @ ErrorCode::NotTokenGatedChannel,
+        constraint = channel.owner == owner.key() @ ErrorCode::NotChannelOwner
+    )]
+    pub channel: Account<'info, Channel>,
+
+    #[account(
+        init,
+        payer = owner,
+        space = 8 + TokenVault::LEN,
+        seeds = [VAULT_SEED, channel.key().as_ref()],
+        bump
+    )]
+    pub token_vault: Account<'info, TokenVault>,
+
+    /// CHECK: PDA authority for vault token account
+    #[account(
+        seeds = [VAULT_AUTH_SEED, channel.key().as_ref(), channel.required_token_mint.unwrap().as_ref()],
+        bump
+    )]
+    pub vault_authority: UncheckedAccount<'info>,
+
+    #[account(
+        init,
+        payer = owner,
+        associated_token::mint = token_mint,
+        associated_token::authority = vault_authority,
+    )]
+    pub vault_token_account: Account<'info, TokenAccount>,
+
+    pub token_mint: Account<'info, Mint>,
+
+    #[account(mut)]
+    pub owner: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
 }
 
 // ==================== STATE ====================
@@ -405,6 +751,32 @@ pub struct Member {
 
 impl Member {
     pub const LEN: usize = 32 + 32 + 8 + 1 + 1;
+}
+
+#[account]
+pub struct TokenVault {
+    pub channel: Pubkey,           // 32
+    pub token_mint: Pubkey,        // 32
+    pub total_locked: u64,         // 8
+    pub bump: u8,                  // 1
+    pub auth_bump: u8,             // 1
+}
+
+impl TokenVault {
+    pub const LEN: usize = 32 + 32 + 8 + 1 + 1;
+}
+
+#[account]
+pub struct MemberStake {
+    pub member: Pubkey,            // 32
+    pub channel: Pubkey,           // 32
+    pub locked_amount: u64,        // 8
+    pub lock_timestamp: i64,       // 8
+    pub bump: u8,                  // 1
+}
+
+impl MemberStake {
+    pub const LEN: usize = 32 + 32 + 8 + 8 + 1;
 }
 
 // ==================== ENUMS ====================
@@ -451,6 +823,9 @@ pub enum ErrorCode {
     #[msg("Member is not active")]
     MemberNotActive,
 
+    #[msg("Member is already active in this channel")]
+    MemberAlreadyActive,
+
     #[msg("Only channel owner can perform this action")]
     NotChannelOwner,
 
@@ -465,4 +840,10 @@ pub enum ErrorCode {
 
     #[msg("Token mint does not match channel requirement")]
     TokenMintMismatch,
+
+    #[msg("Channel is not token-gated")]
+    NotTokenGatedChannel,
+
+    #[msg("Arithmetic overflow")]
+    Overflow,
 }

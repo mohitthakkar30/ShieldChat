@@ -21,16 +21,21 @@ import {
 } from "@/lib/shadowwire";
 import { WalletAddress } from "@/components/WalletAddress";
 import { InviteModal } from "@/components/InviteModal";
+import { LeaveChannelModal } from "@/components/LeaveChannelModal";
 import { useInvites } from "@/hooks/useInvites";
+import { useRouter } from "next/navigation";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
 export default function ChannelPage() {
   const params = useParams();
+  const router = useRouter();
   const channelId = params.id as string;
 
   const {
     fetchChannel,
     checkMembership,
     joinChannel,
+    leaveChannel,
     logMessage,
     loading,
     error,
@@ -59,8 +64,6 @@ export default function ChannelPage() {
   // Helius real-time monitoring - callback for when new messages are detected
   // Uses direct extraction from Helius payload for faster message display
   const handleNewMessage = useCallback(async (heliusMessage: HeliusMessage) => {
-    console.log("[Channel] Helius detected new message, extracting directly...");
-
     // Try to extract and display message directly from Helius payload
     const added = await addMessageFromHelius(
       heliusMessage.instructionData,
@@ -71,7 +74,6 @@ export default function ChannelPage() {
 
     if (!added) {
       // Fallback to full refresh if direct extraction failed
-      console.log("[Channel] Direct extraction failed, falling back to refresh");
       fetchChannelMessages(true);
     }
   }, [addMessageFromHelius, fetchChannelMessages]);
@@ -98,6 +100,10 @@ export default function ChannelPage() {
   // Invite state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const { canCreateInvite } = useInvites();
+
+  // Leave channel state
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const {
     pendingPayment,
     setPendingPayment,
@@ -142,12 +148,9 @@ export default function ChannelPage() {
 
     if (heliusConnected) {
       // Helius connected - stop fast polling, use WebSocket for real-time updates
-      // Optional: Could keep slow polling (30s) as backup
-      // console.log("[Channel] Helius connected, stopping fast polling");
       stopPolling();
     } else {
       // No Helius - use fast polling (3s)
-      console.log("[Channel] No Helius connection, using 3s polling");
       startPolling();
     }
 
@@ -177,25 +180,55 @@ export default function ChannelPage() {
   };
 
   const handleJoin = async () => {
-    if (!channel) return;
+    if (!channel || !publicKey) return;
 
     setJoining(true);
     try {
-      const result = await joinChannel(channel.publicKey);
-      console.log("Join successful:", result);
+      // For token-gated channels, get user's token account for staking
+      let userTokenAccount: PublicKey | undefined;
+      const tokenMint = channel.account.requiredTokenMint;
+
+      if (tokenMint) {
+        userTokenAccount = getAssociatedTokenAddressSync(tokenMint, publicKey);
+      }
+
+      await joinChannel(channel.publicKey, userTokenAccount);
 
       // Wait a bit for the blockchain state to update
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       await loadChannelData();
-
-      // Presence is handled via WebSocket server (no on-chain presence needed)
-      console.log("[Channel] ✅ Joined channel, presence will sync via WebSocket");
     } catch (err) {
       console.error("Failed to join channel:", err);
       alert(`Failed to join: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setJoining(false);
+    }
+  };
+
+  const handleLeave = async () => {
+    if (!channel || !publicKey) return;
+
+    setLeaving(true);
+    try {
+      // For token-gated channels, get user's token account for unstaking
+      let userTokenAccount: PublicKey | undefined;
+      const tokenMint = channel.account.requiredTokenMint;
+
+      if (tokenMint) {
+        userTokenAccount = getAssociatedTokenAddressSync(tokenMint, publicKey);
+      }
+
+      await leaveChannel(channel.publicKey, userTokenAccount);
+
+      // Close modal and redirect to channels list
+      setShowLeaveModal(false);
+      router.push("/app");
+    } catch (err) {
+      console.error("Failed to leave channel:", err);
+      alert(`Failed to leave: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setLeaving(false);
     }
   };
 
@@ -208,14 +241,11 @@ export default function ChannelPage() {
       // Execute payment if attached
       let paymentData: PaymentAttachment | undefined;
       if (pendingPayment) {
-        console.log("[Channel] Executing attached payment...");
         const result = await executePayment();
         if (result) {
           paymentData = result;
-          console.log("[Channel] Payment successful:", result.txSignature);
         } else {
           // Payment failed, don't send message
-          console.error("[Channel] Payment failed, aborting message");
           setSending(false);
           return;
         }
@@ -293,19 +323,29 @@ export default function ChannelPage() {
               </h1>
               <div className="flex items-center space-x-2 text-sm text-gray-400">
                 <span>{channelType}</span>
-                <span>•</span>
-                <span>{channel.account.memberCount} members</span>
-                {onlineUsers.length > 0 && (
+                {/* Only show stats to members - hide for non-members of private/token-gated channels */}
+                {canAccess ? (
                   <>
                     <span>•</span>
-                    <span className="text-green-400 flex items-center">
-                      <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
-                      {onlineUsers.length} online
-                    </span>
+                    <span>{channel.account.memberCount} members</span>
+                    {onlineUsers.length > 0 && (
+                      <>
+                        <span>•</span>
+                        <span className="text-green-400 flex items-center">
+                          <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
+                          {onlineUsers.length} online
+                        </span>
+                      </>
+                    )}
+                    <span>•</span>
+                    <span>{channel.account.messageCount.toString()} messages</span>
+                  </>
+                ) : (
+                  <>
+                    <span>•</span>
+                    <span className="text-gray-500">Join to see activity</span>
                   </>
                 )}
-                <span>•</span>
-                <span>{channel.account.messageCount.toString()} messages</span>
                 {isOwner && (
                   <>
                     <span>•</span>
@@ -336,6 +376,17 @@ export default function ChannelPage() {
                 >
                   {messagesLoading ? "Loading..." : "Refresh"}
                 </button>
+                {isMember && !isOwner && (
+                  <button
+                    onClick={() => setShowLeaveModal(true)}
+                    className="bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 py-2 px-4 rounded-lg text-sm transition-colors flex items-center gap-2 border border-red-600/30"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Leave
+                  </button>
+                )}
               </>
             )}
             {!canAccess && (
@@ -355,18 +406,44 @@ export default function ChannelPage() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {!canAccess ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="text-4xl mb-4">🔒</div>
+            <div className="text-center max-w-md">
+              <div className="text-4xl mb-4">{channel?.account.requiredTokenMint ? "🎫" : "🔒"}</div>
               <h2 className="text-xl font-bold mb-2">Join to View Messages</h2>
               <p className="text-gray-400 mb-4">
                 You need to join this channel to see messages and participate.
               </p>
+
+              {/* Token Staking Info for Token-Gated Channels */}
+              {channel?.account.requiredTokenMint && channel?.account.minTokenAmount && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4 text-left">
+                  <div className="flex items-center gap-2 text-yellow-300 font-medium mb-2">
+                    <span>🔒</span>
+                    <span>Token Staking Required</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mb-3">
+                    Tokens will be locked while you are a member. They are returned when you leave.
+                  </p>
+                  <div className="text-sm space-y-1">
+                    <div className="flex justify-between text-gray-400">
+                      <span>Token:</span>
+                      <span className="text-gray-300 font-mono text-xs">
+                        {channel.account.requiredTokenMint.toString().slice(0, 4)}...{channel.account.requiredTokenMint.toString().slice(-4)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-gray-400">
+                      <span>Stake amount:</span>
+                      <span className="text-gray-300">{channel.account.minTokenAmount.toString()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={handleJoin}
                 disabled={joining}
                 className="bg-purple-600 hover:bg-purple-700 text-white py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
               >
-                {joining ? "Joining..." : "Join Channel"}
+                {joining ? "Joining..." : channel?.account.requiredTokenMint ? "Stake & Join" : "Join Channel"}
               </button>
             </div>
           </div>
@@ -529,6 +606,17 @@ export default function ChannelPage() {
           isOwner={isOwner || false}
         />
       )}
+
+      {/* Leave Channel Modal */}
+      <LeaveChannelModal
+        isOpen={showLeaveModal}
+        onClose={() => setShowLeaveModal(false)}
+        onConfirm={handleLeave}
+        loading={leaving}
+        channelName={channelName || "this channel"}
+        isTokenGated={!!channel?.account.requiredTokenMint}
+        stakedAmount={channel?.account.minTokenAmount?.toString()}
+      />
     </div>
   );
 }

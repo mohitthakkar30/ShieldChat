@@ -310,22 +310,25 @@ export default function JoinPage() {
                 </div>
               )}
 
-              {/* Token Requirements (for token-gated channels) */}
+              {/* Token Staking Requirements (for token-gated channels) */}
               {channelData?.account.requiredTokenMint && channelData?.account.minTokenAmount && (
                 <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 space-y-2">
                   <div className="flex items-center gap-2 text-yellow-300 font-medium">
-                    <span>🎫</span>
-                    <span>Token Requirements</span>
+                    <span>🔒</span>
+                    <span>Token Staking Required</span>
                   </div>
+                  <p className="text-xs text-gray-400 mb-2">
+                    Tokens will be locked while you are a member. They are returned when you leave the channel.
+                  </p>
                   <div className="text-sm space-y-1">
                     <div className="flex justify-between text-gray-400">
-                      <span>Required token:</span>
+                      <span>Token to stake:</span>
                       <span className="text-gray-300 font-mono text-xs">
                         {channelData.account.requiredTokenMint.toString().slice(0, 4)}...{channelData.account.requiredTokenMint.toString().slice(-4)}
                       </span>
                     </div>
                     <div className="flex justify-between text-gray-400">
-                      <span>Minimum amount:</span>
+                      <span>Stake amount:</span>
                       <span className="text-gray-300">{channelData.account.minTokenAmount.toString()}</span>
                     </div>
                     {connected && (
@@ -346,7 +349,7 @@ export default function JoinPage() {
                   </div>
                   {connected && tokenBalance !== null && tokenBalance < channelData.account.minTokenAmount && (
                     <div className="text-xs text-red-400 mt-2">
-                      You don&apos;t have enough tokens to join this channel.
+                      You don&apos;t have enough tokens to stake and join this channel.
                     </div>
                   )}
                 </div>

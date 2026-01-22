@@ -15,7 +15,7 @@ export function CreateChannelModal({
   onClose,
   onSuccess,
 }: CreateChannelModalProps) {
-  const { createChannel, setTokenGate, loading, error } = useShieldChat();
+  const { createChannel, setTokenGate, initializeVault, loading, error } = useShieldChat();
   const [name, setName] = useState("");
   const [type, setType] = useState("privateGroup");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -57,13 +57,19 @@ export function CreateChannelModal({
     try {
       const result = await createChannel(name.trim(), type);
 
-      // If token-gated, set the token requirements after creating the channel
+      // If token-gated, set the token requirements and initialize vault
       if (type === "tokenGated" && tokenMint && minTokenAmount) {
+        const tokenMintPubkey = new PublicKey(tokenMint.trim());
+
+        // Set token gate requirements
         await setTokenGate(
           result.channelPda,
-          new PublicKey(tokenMint.trim()),
+          tokenMintPubkey,
           BigInt(minTokenAmount)
         );
+
+        // Initialize the token vault for staking
+        await initializeVault(result.channelPda, tokenMintPubkey);
       }
 
       // Reset form
@@ -167,8 +173,11 @@ export function CreateChannelModal({
           {type === "tokenGated" && (
             <div className="space-y-3 p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/30">
               <div className="text-sm text-yellow-300 font-medium mb-2">
-                Token Requirements
+                Token Staking Requirements
               </div>
+              <p className="text-xs text-gray-400 mb-3">
+                Members must stake tokens to join. Tokens are locked while they are members and returned when they leave.
+              </p>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
                   Token Mint Address
@@ -181,12 +190,12 @@ export function CreateChannelModal({
                   className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  The SPL token mint address that users must hold
+                  The SPL token mint address that users must stake
                 </p>
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  Minimum Amount (smallest units)
+                  Stake Amount (smallest units)
                 </label>
                 <input
                   type="number"
@@ -197,7 +206,7 @@ export function CreateChannelModal({
                   className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Amount in smallest units (e.g., 1 USDC = 1000000 with 6 decimals)
+                  Amount to stake (e.g., 1 USDC = 1000000 with 6 decimals)
                 </p>
               </div>
             </div>
