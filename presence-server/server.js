@@ -53,7 +53,6 @@ function broadcastToChannel(channelId, excludeWs = null) {
  * Handle incoming WebSocket connection
  */
 wss.on("connection", (ws) => {
-  console.log("Client connected");
 
   // Initialize client info
   clients.set(ws, { wallet: null, channels: new Set() });
@@ -62,18 +61,17 @@ wss.on("connection", (ws) => {
     try {
       const message = JSON.parse(data.toString());
       handleMessage(ws, message);
-    } catch (err) {
-      console.error("Failed to parse message:", err);
+    } catch {
+      // Ignore parse errors
     }
   });
 
   ws.on("close", () => {
-    console.log("Client disconnected");
     handleDisconnect(ws);
   });
 
-  ws.on("error", (err) => {
-    console.error("WebSocket error:", err);
+  ws.on("error", () => {
+    // Silently handle errors - will trigger close
   });
 });
 
@@ -88,14 +86,12 @@ function handleMessage(ws, message) {
     case "identify":
       // Client identifies their wallet
       clientInfo.wallet = message.wallet;
-      console.log(`Client identified as ${message.wallet?.slice(0, 8)}...`);
       break;
 
     case "subscribe":
       // Subscribe to a channel's presence updates
       if (message.channelId) {
         clientInfo.channels.add(message.channelId);
-        console.log(`${clientInfo.wallet?.slice(0, 8)}... subscribed to ${message.channelId.slice(0, 8)}...`);
 
         // Send current presence state
         const channelPresence = presenceByChannel.get(message.channelId);
@@ -147,22 +143,18 @@ function handleMessage(ws, message) {
       break;
 
     case "heartbeat":
-      // Keep-alive and update lastSeen
+      // Keep-alive - just update lastSeen, don't broadcast (saves memory/bandwidth)
       if (clientInfo.wallet) {
         for (const channelId of clientInfo.channels) {
           updatePresence(channelId, clientInfo.wallet, {
             isOnline: true,
           });
         }
-        // Broadcast to all subscribed channels
-        for (const channelId of clientInfo.channels) {
-          broadcastToChannel(channelId);
-        }
       }
       break;
 
     default:
-      console.log("Unknown message type:", message.type);
+      // Ignore unknown message types
   }
 }
 
