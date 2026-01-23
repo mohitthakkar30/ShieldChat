@@ -23,6 +23,8 @@ import { WalletAddress } from "@/components/WalletAddress";
 import { InviteModal } from "@/components/InviteModal";
 import { LeaveChannelModal } from "@/components/LeaveChannelModal";
 import { useInvites } from "@/hooks/useInvites";
+import { useVoting } from "@/hooks/useVoting";
+import { CreatePollModal, PollCard } from "@/components/Poll";
 import { useRouter } from "next/navigation";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
@@ -128,6 +130,22 @@ export default function ChannelPage() {
     isUserOnline,
   } = usePresence(channelPda);
 
+  // Voting state (Inco Lightning anonymous voting)
+  const {
+    polls,
+    loading: pollsLoading,
+    createPoll,
+    castVote,
+    revealResults,
+    hasVoted,
+    isPollActive,
+    canReveal,
+    fetchPolls,
+  } = useVoting(channelId);
+
+  const [showPollModal, setShowPollModal] = useState(false);
+  const [pollsExpanded, setPollsExpanded] = useState(false);
+
   // Reset all state when channel changes
   useEffect(() => {
     currentChannelIdRef.current = channelId;
@@ -139,6 +157,8 @@ export default function ChannelPage() {
     setShowPaymentModal(false);
     setShowInviteModal(false);
     setShowLeaveModal(false);
+    setShowPollModal(false);
+    setPollsExpanded(false);
     setPendingPayment(null);
     hasFetchedMessages.current = false;
     markedAsReadRef.current = new Set(); // Clear read tracking for new channel
@@ -394,6 +414,16 @@ export default function ChannelPage() {
             {canAccess && (
               <>
                 <button
+                  onClick={() => setShowPollModal(true)}
+                  className="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg text-sm transition-colors flex items-center gap-2"
+                  title="Create Poll"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Poll
+                </button>
+                <button
                   onClick={() => setShowInviteModal(true)}
                   className="bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-lg text-sm transition-colors flex items-center gap-2"
                 >
@@ -434,6 +464,48 @@ export default function ChannelPage() {
           </div>
         </div>
       </div>
+
+      {/* Active Polls Section - Collapsible */}
+      {canAccess && polls.length > 0 && (
+        <div className="bg-gray-800/30 border-b border-gray-700">
+          <button
+            onClick={() => setPollsExpanded(!pollsExpanded)}
+            className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-700/30 transition-colors"
+          >
+            <h3 className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Active Polls ({polls.filter(p => isPollActive(p.account)).length})
+            </h3>
+            <svg
+              className={`w-4 h-4 text-gray-400 transition-transform ${pollsExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {pollsExpanded && (
+            <div className="px-4 pb-4 space-y-3 max-h-80 overflow-y-auto">
+              {polls.map((poll) => (
+                <PollCard
+                  key={poll.pda.toString()}
+                  poll={poll.account}
+                  pollPda={poll.pda}
+                  hasVoted={hasVoted(poll.pda)}
+                  isActive={isPollActive(poll.account)}
+                  canReveal={canReveal(poll.account)}
+                  onVote={(optionIndex) => castVote(poll.pda, optionIndex)}
+                  onReveal={() => revealResults(poll.pda)}
+                  loading={pollsLoading}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 flex flex-col-reverse">
@@ -660,6 +732,14 @@ export default function ChannelPage() {
         channelName={channelName || "this channel"}
         isTokenGated={!!channel?.account.requiredTokenMint}
         stakedAmount={channel?.account.minTokenAmount?.toString()}
+      />
+
+      {/* Create Poll Modal */}
+      <CreatePollModal
+        isOpen={showPollModal}
+        onClose={() => setShowPollModal(false)}
+        onCreatePoll={createPoll}
+        loading={pollsLoading}
       />
     </div>
   );

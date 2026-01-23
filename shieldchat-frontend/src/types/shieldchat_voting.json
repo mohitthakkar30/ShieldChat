@@ -1,0 +1,539 @@
+{
+  "address": "H19dGK9xWHppSSuAEv9TfgPyK1S2dB1zihBXPXQnWdC5",
+  "metadata": {
+    "name": "shieldchat_voting",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Anonymous voting for ShieldChat using Inco Lightning"
+  },
+  "instructions": [
+    {
+      "name": "cast_vote",
+      "docs": [
+        "Cast an anonymous vote on a poll",
+        "",
+        "# Arguments",
+        "* `option_index` - Which option to vote for (0-based index)",
+        "* `ciphertext` - Client-encrypted value of 1 (from Inco SDK)",
+        "* `input_type` - 0 for ciphertext, 1 for plaintext"
+      ],
+      "discriminator": [
+        20,
+        212,
+        15,
+        189,
+        69,
+        180,
+        69,
+        151
+      ],
+      "accounts": [
+        {
+          "name": "voter",
+          "docs": [
+            "The voter"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "poll",
+          "docs": [
+            "The poll being voted on"
+          ],
+          "writable": true
+        },
+        {
+          "name": "vote_record",
+          "docs": [
+            "VoteRecord to track that this user has voted (prevents double voting)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  111,
+                  116,
+                  101,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "poll"
+              },
+              {
+                "kind": "account",
+                "path": "voter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "inco_lightning_program",
+          "docs": [
+            "Inco Lightning program for encrypted operations"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program for account creation"
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "option_index",
+          "type": "u8"
+        },
+        {
+          "name": "ciphertext",
+          "type": "bytes"
+        },
+        {
+          "name": "input_type",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "close_poll",
+      "docs": [
+        "Close a poll and recover rent"
+      ],
+      "discriminator": [
+        139,
+        213,
+        162,
+        65,
+        172,
+        150,
+        123,
+        67
+      ],
+      "accounts": [
+        {
+          "name": "closer",
+          "docs": [
+            "The poll creator (receives rent)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "poll",
+          "docs": [
+            "The poll to close"
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_poll",
+      "docs": [
+        "Create a new anonymous poll in a channel",
+        "",
+        "# Arguments",
+        "* `question` - The poll question (max 200 characters)",
+        "* `options` - The poll options (2-4 options, max 50 characters each)",
+        "* `duration_seconds` - How long the poll should be active (60s to 30 days)",
+        "* `nonce` - Unique nonce for PDA derivation (typically current timestamp)"
+      ],
+      "discriminator": [
+        182,
+        171,
+        112,
+        238,
+        6,
+        219,
+        14,
+        110
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "docs": [
+            "The user creating the poll"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel",
+          "docs": [
+            "The channel this poll belongs to"
+          ]
+        },
+        {
+          "name": "poll",
+          "docs": [
+            "The poll account to create"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "inco_lightning_program",
+          "docs": [
+            "Inco Lightning program for encrypted operations"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program for account creation"
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "question",
+          "type": "string"
+        },
+        {
+          "name": "options",
+          "type": {
+            "vec": "string"
+          }
+        },
+        {
+          "name": "duration_seconds",
+          "type": "i64"
+        },
+        {
+          "name": "nonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "reveal_results",
+      "docs": [
+        "Reveal poll results after voting has ended",
+        "",
+        "# Arguments",
+        "* `plaintexts` - Decrypted vote counts from Inco attested decrypt"
+      ],
+      "discriminator": [
+        111,
+        149,
+        62,
+        162,
+        102,
+        204,
+        225,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "revealer",
+          "docs": [
+            "Anyone can trigger reveal after poll ends"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "poll",
+          "docs": [
+            "The poll to reveal results for"
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "plaintexts",
+          "type": {
+            "vec": "u64"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Poll",
+      "discriminator": [
+        110,
+        234,
+        167,
+        188,
+        231,
+        136,
+        153,
+        111
+      ]
+    },
+    {
+      "name": "VoteRecord",
+      "discriminator": [
+        112,
+        9,
+        123,
+        165,
+        234,
+        9,
+        157,
+        167
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "QuestionTooLong",
+      "msg": "Question exceeds maximum length of 200 characters"
+    },
+    {
+      "code": 6001,
+      "name": "OptionTooLong",
+      "msg": "Option exceeds maximum length of 50 characters"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidOptionsCount",
+      "msg": "Poll must have between 2 and 4 options"
+    },
+    {
+      "code": 6003,
+      "name": "DurationTooShort",
+      "msg": "Poll duration must be at least 1 minute"
+    },
+    {
+      "code": 6004,
+      "name": "DurationTooLong",
+      "msg": "Poll duration cannot exceed 30 days"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidOptionIndex",
+      "msg": "Invalid option index"
+    },
+    {
+      "code": 6006,
+      "name": "PollEnded",
+      "msg": "Poll has ended"
+    },
+    {
+      "code": 6007,
+      "name": "PollNotEnded",
+      "msg": "Poll has not ended yet"
+    },
+    {
+      "code": 6008,
+      "name": "AlreadyVoted",
+      "msg": "User has already voted on this poll"
+    },
+    {
+      "code": 6009,
+      "name": "AlreadyRevealed",
+      "msg": "Results have already been revealed"
+    },
+    {
+      "code": 6010,
+      "name": "NotRevealed",
+      "msg": "Results must be revealed before closing"
+    },
+    {
+      "code": 6011,
+      "name": "NotAuthorized",
+      "msg": "Not authorized to perform this action"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidPlaintextCount",
+      "msg": "Invalid plaintext count"
+    },
+    {
+      "code": 6013,
+      "name": "Overflow",
+      "msg": "Vote count overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "Poll",
+      "docs": [
+        "Poll account - stores the poll configuration and encrypted vote counts"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "channel",
+            "docs": [
+              "The channel this poll belongs to"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "docs": [
+              "The user who created the poll"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "question",
+            "docs": [
+              "The poll question (max 200 characters)"
+            ],
+            "type": "string"
+          },
+          {
+            "name": "options",
+            "docs": [
+              "The poll options (max 4 options, 50 chars each)"
+            ],
+            "type": {
+              "array": [
+                "string",
+                4
+              ]
+            }
+          },
+          {
+            "name": "options_count",
+            "docs": [
+              "Number of active options (2-4)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "vote_counts",
+            "docs": [
+              "Encrypted vote counts per option (Inco Euint128 handles stored as u128)"
+            ],
+            "type": {
+              "array": [
+                "u128",
+                4
+              ]
+            }
+          },
+          {
+            "name": "total_votes",
+            "docs": [
+              "Total number of votes cast (public counter for transparency)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "end_time",
+            "docs": [
+              "Unix timestamp when voting ends"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "revealed",
+            "docs": [
+              "Whether results have been revealed"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "revealed_counts",
+            "docs": [
+              "Plaintext vote counts after reveal"
+            ],
+            "type": {
+              "array": [
+                "u64",
+                4
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VoteRecord",
+      "docs": [
+        "VoteRecord account - tracks that a user has voted (prevents double voting)",
+        "Does NOT store which option they voted for (preserves anonymity)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "poll",
+            "docs": [
+              "The poll this vote is for"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "voter",
+            "docs": [
+              "The voter's wallet address"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "voted_at",
+            "docs": [
+              "Unix timestamp when the vote was cast"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

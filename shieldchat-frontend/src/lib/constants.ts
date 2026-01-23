@@ -5,6 +5,16 @@ export const PROGRAM_ID = new PublicKey(
   "FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN"
 );
 
+// ShieldChat Voting Program ID (deployed on devnet)
+export const VOTING_PROGRAM_ID = new PublicKey(
+  "H19dGK9xWHppSSuAEv9TfgPyK1S2dB1zihBXPXQnWdC5"
+);
+
+// Inco Lightning Program ID (on devnet)
+export const INCO_LIGHTNING_PROGRAM_ID = new PublicKey(
+  "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+);
+
 // RPC Endpoints (API keys from environment variables)
 const HELIUS_RPC_KEY = process.env.NEXT_PUBLIC_HELIUS_RPC_API_KEY;
 const HELIUS_WS_KEY = process.env.NEXT_PUBLIC_HELIUS_API_KEY;
@@ -23,6 +33,10 @@ export const MEMBER_SEED = "member";
 export const VAULT_SEED = "vault";
 export const VAULT_AUTH_SEED = "vault_auth";
 export const STAKE_SEED = "stake";
+
+// Voting PDA Seeds
+export const POLL_SEED = "poll";
+export const VOTE_RECORD_SEED = "vote_record";
 
 // Limits
 export const MAX_METADATA_SIZE = 512;
@@ -109,5 +123,45 @@ export function getStakePDA(
       wallet.toBytes(),
     ],
     PROGRAM_ID
+  );
+}
+
+// Helper function to derive Poll PDA
+export function getPollPDA(
+  channel: PublicKey,
+  creator: PublicKey,
+  nonce: bigint
+): [PublicKey, number] {
+  // Convert nonce to little-endian 8-byte array
+  const nonceBuffer = new Uint8Array(8);
+  let n = nonce;
+  for (let i = 0; i < 8; i++) {
+    nonceBuffer[i] = Number(n & BigInt(0xff));
+    n = n >> BigInt(8);
+  }
+
+  return PublicKey.findProgramAddressSync(
+    [
+      new TextEncoder().encode(POLL_SEED),
+      channel.toBytes(),
+      creator.toBytes(),
+      nonceBuffer,
+    ],
+    VOTING_PROGRAM_ID
+  );
+}
+
+// Helper function to derive VoteRecord PDA
+export function getVoteRecordPDA(
+  poll: PublicKey,
+  voter: PublicKey
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [
+      new TextEncoder().encode(VOTE_RECORD_SEED),
+      poll.toBytes(),
+      voter.toBytes(),
+    ],
+    VOTING_PROGRAM_ID
   );
 }
