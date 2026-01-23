@@ -19,11 +19,17 @@ import {
   CreatePollParams,
 } from "@/types/shieldchat_voting";
 import VOTING_IDL from "@/types/shieldchat_voting.json";
+import { uploadMessage, IPFSMessage } from "@/lib/ipfs";
 
 /**
  * Hook for managing anonymous voting in ShieldChat channels
+ * @param channelPda - The channel PDA string
+ * @param logMessage - Optional function to log messages on-chain (for poll results)
  */
-export function useVoting(channelPda: string | null) {
+export function useVoting(
+  channelPda: string | null,
+  logMessage?: (channelPda: PublicKey, messageContent: string, ipfsCid?: string) => Promise<{ signature: string; messageHash: number[]; ipfsCid: string }>
+) {
   const anchorWallet = useAnchorWallet();
   const { publicKey, signMessage } = useWallet();
   const [loading, setLoading] = useState(false);
@@ -327,6 +333,44 @@ export function useVoting(channelPda: string | null) {
           })
           .rpc();
 
+        // Log poll results on-chain as a permanent message
+        if (logMessage && channelPda) {
+          try {
+            const revealedAt = new Date().toISOString();
+
+            // Create poll result message content
+            const pollResultContent = JSON.stringify({
+              type: "poll_result",
+              pollId: pollPda.toString(),
+              question: poll.question,
+              options: poll.options
+                .slice(0, poll.optionsCount)
+                .map((opt, i) => ({
+                  text: opt,
+                  votes: plaintexts[i].toNumber(),
+                })),
+              totalVotes: totalVotes,
+              revealedAt: revealedAt,
+            });
+
+            // Upload to IPFS
+            const ipfsMessage: IPFSMessage = {
+              content: pollResultContent,
+              sender: publicKey.toString(),
+              timestamp: Date.now(),
+              channelId: channelPda,
+            };
+            const ipfsCid = await uploadMessage(ipfsMessage);
+
+            // Log on-chain
+            await logMessage(new PublicKey(channelPda), pollResultContent, ipfsCid);
+            console.log("[useVoting] Poll results logged on-chain:", pollPda.toString());
+          } catch (logErr) {
+            // Don't fail the reveal if logging fails - just log the error
+            console.error("[useVoting] Failed to log poll results on-chain:", logErr);
+          }
+        }
+
         // Refresh polls
         await fetchPolls();
       } catch (err: unknown) {
@@ -338,7 +382,7 @@ export function useVoting(channelPda: string | null) {
         setLoading(false);
       }
     },
-    [anchorWallet, publicKey, signMessage, getVotingProgram, fetchPolls]
+    [anchorWallet, publicKey, signMessage, getVotingProgram, fetchPolls, logMessage, channelPda]
   );
 
   // Close a poll (creator only, after reveal)

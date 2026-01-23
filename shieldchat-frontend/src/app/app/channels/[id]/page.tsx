@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { PublicKey } from "@solana/web3.js";
 import { useShieldChat, Channel, Member } from "@/hooks/useShieldChat";
@@ -131,6 +131,7 @@ export default function ChannelPage() {
   } = usePresence(channelPda);
 
   // Voting state (Inco Lightning anonymous voting)
+  // Pass logMessage to allow poll results to be logged on-chain after reveal
   const {
     polls,
     loading: pollsLoading,
@@ -141,10 +142,43 @@ export default function ChannelPage() {
     isPollActive,
     canReveal,
     fetchPolls,
-  } = useVoting(channelId);
+  } = useVoting(channelId, logMessage);
 
   const [showPollModal, setShowPollModal] = useState(false);
   const [pollsExpanded, setPollsExpanded] = useState(false);
+
+  // Merge revealed polls into messages as poll result cards
+  const allMessages = useMemo(() => {
+    // Create poll result messages from revealed polls
+    const pollMessages: ChatMessage[] = polls
+      .filter(p => p.account.revealed)
+      .map(poll => ({
+        id: `poll-result-${poll.pda.toString()}`,
+        content: '', // Poll results don't have text content
+        sender: poll.account.creator.toString(),
+        timestamp: new Date(poll.account.endTime.toNumber() * 1000).toISOString(),
+        pollResult: {
+          pollId: poll.pda.toString(),
+          question: poll.account.question,
+          options: poll.account.options
+            .slice(0, poll.account.optionsCount)
+            .map((opt, i) => ({
+              text: opt,
+              votes: Number(poll.account.revealedCounts[i]),
+            })),
+          totalVotes: Number(poll.account.totalVotes),
+          creator: poll.account.creator.toString(),
+          revealedAt: new Date(poll.account.endTime.toNumber() * 1000).toISOString(),
+        },
+      }));
+
+    // Merge with regular messages and sort by timestamp
+    const merged = [...messages, ...pollMessages].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    return merged;
+  }, [messages, polls]);
 
   // Reset all state when channel changes
   useEffect(() => {
@@ -556,7 +590,7 @@ export default function ChannelPage() {
           <div className="flex items-center justify-center h-full">
             <div className="text-gray-400">Loading messages...</div>
           </div>
-        ) : messages.length === 0 ? (
+        ) : allMessages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-500">
               <div className="text-4xl mb-4">💬</div>
@@ -564,7 +598,7 @@ export default function ChannelPage() {
             </div>
           </div>
         ) : (
-          [...messages].reverse().map((message, index) => {
+          [...allMessages].reverse().map((message, index) => {
             const messageKey = message.id;
             return (
               <MessageBubble
@@ -846,6 +880,47 @@ function MessageBubble({
                 View Transaction ↗
               </a>
             )}
+          </div>
+        )}
+
+        {/* Poll Result Card */}
+        {message.pollResult && (
+          <div className="mt-2 bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/30 rounded-lg p-4 max-w-md w-full">
+            <div className="flex items-center gap-2 mb-3">
+              <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <span className="text-sm font-medium text-purple-300">Poll Results</span>
+            </div>
+            <h4 className="font-semibold text-white mb-3">{message.pollResult.question}</h4>
+            <div className="space-y-2">
+              {message.pollResult.options.map((option, idx) => {
+                const percentage = message.pollResult!.totalVotes > 0
+                  ? (option.votes / message.pollResult!.totalVotes) * 100
+                  : 0;
+                const isWinner = message.pollResult!.options.every(o => o.votes <= option.votes) && option.votes > 0;
+
+                return (
+                  <div key={idx} className="relative">
+                    <div
+                      className={`absolute inset-0 rounded ${isWinner ? 'bg-purple-600/40' : 'bg-gray-700/40'}`}
+                      style={{ width: `${percentage}%` }}
+                    />
+                    <div className="relative flex justify-between p-2">
+                      <span className={`text-sm ${isWinner ? 'text-white font-medium' : 'text-gray-300'}`}>
+                        {option.text}
+                      </span>
+                      <span className={`text-sm ${isWinner ? 'text-purple-300' : 'text-gray-400'}`}>
+                        {option.votes} ({percentage.toFixed(1)}%)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-xs text-gray-400">
+              {message.pollResult.totalVotes} total vote{message.pollResult.totalVotes !== 1 ? 's' : ''}
+            </p>
           </div>
         )}
       </div>

@@ -123,6 +123,15 @@ function parseMessageLoggedEvent(logs: string[]): ParsedMessageLoggedEvent | nul
   }
 }
 
+export interface PollResultAttachment {
+  pollId: string;
+  question: string;
+  options: Array<{ text: string; votes: number }>;
+  totalVotes: number;
+  creator: string;
+  revealedAt: string;
+}
+
 export interface ChatMessage {
   id: string;
   content: string;
@@ -130,6 +139,7 @@ export interface ChatMessage {
   timestamp: string;
   txSignature?: string;
   payment?: PaymentAttachment;
+  pollResult?: PollResultAttachment;
 }
 
 /**
