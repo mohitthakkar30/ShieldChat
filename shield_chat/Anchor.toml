@@ -8,9 +8,12 @@ resolution = true
 
 [programs.localnet]
 shield_chat = "FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN"
+shieldchat_voting = "H19dGK9xWHppSSuAEv9TfgPyK1S2dB1zihBXPXQnWdC5"
 
 [programs.devnet]
 shield_chat = "FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN"
+shieldchat_voting = "H19dGK9xWHppSSuAEv9TfgPyK1S2dB1zihBXPXQnWdC5"
+inco_lightning = "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
 
 [registry]
 url = "https://api.apr.dev"
