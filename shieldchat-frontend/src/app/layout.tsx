@@ -1,16 +1,25 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Space_Mono, Outfit, Inter } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/components/WalletProvider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Terminal aesthetic - for code/technical elements
+const spaceMono = Space_Mono({
+  weight: ["400", "700"],
   subsets: ["latin"],
+  variable: "--font-mono",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// Modern geometric - for headings
+const outfit = Outfit({
   subsets: ["latin"],
+  variable: "--font-display",
+});
+
+// Clean readable - for body text
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
 });
 
 export const metadata: Metadata = {
@@ -26,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-900 text-white`}
+        className={`${inter.variable} ${spaceMono.variable} ${outfit.variable} font-sans antialiased bg-[#030712] text-gray-50`}
       >
         <WalletProvider>{children}</WalletProvider>
       </body>
