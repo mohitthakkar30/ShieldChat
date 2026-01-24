@@ -1,0 +1,881 @@
+{
+  "address": "Bg4L8JiYF7EmoAXHMXtzSfMBkJg9b8fnNjYSPDTi7sMm",
+  "metadata": {
+    "name": "arcium_mxe",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Arcium MXE features for ShieldChat - Sealed-bid auctions, private tipping, and games"
+  },
+  "instructions": [
+    {
+      "name": "cancel_game",
+      "docs": [
+        "Cancel a coinflip game (only creator, only if no one joined)"
+      ],
+      "discriminator": [
+        121,
+        194,
+        154,
+        118,
+        103,
+        235,
+        149,
+        52
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "cancel_ttt_game",
+      "docs": [
+        "Cancel a Tic Tac Toe game (only creator, only if no one joined)"
+      ],
+      "discriminator": [
+        34,
+        153,
+        209,
+        205,
+        126,
+        85,
+        27,
+        142
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_ttt_winnings",
+      "docs": [
+        "Claim Tic Tac Toe winnings (winner takes all, or both get refund on draw)"
+      ],
+      "discriminator": [
+        17,
+        19,
+        255,
+        218,
+        172,
+        203,
+        43,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "claimer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_winnings",
+      "docs": [
+        "Winner claims the pot"
+      ],
+      "discriminator": [
+        161,
+        215,
+        24,
+        59,
+        14,
+        236,
+        242,
+        221
+      ],
+      "accounts": [
+        {
+          "name": "claimer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_game",
+      "docs": [
+        "Create a new coinflip game"
+      ],
+      "discriminator": [
+        124,
+        69,
+        75,
+        66,
+        184,
+        220,
+        72,
+        206
+      ],
+      "accounts": [
+        {
+          "name": "player_a",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel"
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  105,
+                  110,
+                  102,
+                  108,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "player_a"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "wager",
+          "type": "u64"
+        },
+        {
+          "name": "commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "nonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_ttt_game",
+      "docs": [
+        "Create a new Tic Tac Toe game"
+      ],
+      "discriminator": [
+        223,
+        219,
+        77,
+        100,
+        237,
+        127,
+        225,
+        148
+      ],
+      "accounts": [
+        {
+          "name": "player_x",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel"
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  116,
+                  97,
+                  99,
+                  116,
+                  111,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "player_x"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "wager",
+          "type": "u64"
+        },
+        {
+          "name": "nonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "join_game",
+      "docs": [
+        "Join an existing coinflip game"
+      ],
+      "discriminator": [
+        107,
+        112,
+        18,
+        38,
+        56,
+        173,
+        60,
+        128
+      ],
+      "accounts": [
+        {
+          "name": "player_b",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "join_ttt_game",
+      "docs": [
+        "Join an existing Tic Tac Toe game"
+      ],
+      "discriminator": [
+        122,
+        174,
+        6,
+        143,
+        136,
+        193,
+        113,
+        128
+      ],
+      "accounts": [
+        {
+          "name": "player_o",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "make_move",
+      "docs": [
+        "Make a move in Tic Tac Toe"
+      ],
+      "discriminator": [
+        78,
+        77,
+        152,
+        203,
+        222,
+        211,
+        208,
+        233
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "position",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "reveal_choice",
+      "docs": [
+        "Reveal your choice (both players must call this)"
+      ],
+      "discriminator": [
+        235,
+        189,
+        39,
+        0,
+        144,
+        153,
+        52,
+        9
+      ],
+      "accounts": [
+        {
+          "name": "revealer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "choice",
+          "type": "u8"
+        },
+        {
+          "name": "nonce",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "CoinflipGame",
+      "discriminator": [
+        103,
+        119,
+        176,
+        171,
+        170,
+        204,
+        73,
+        25
+      ]
+    },
+    {
+      "name": "TicTacToeGame",
+      "discriminator": [
+        66,
+        194,
+        214,
+        183,
+        246,
+        163,
+        204,
+        145
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidWager",
+      "msg": "Invalid wager amount (minimum 0.001 SOL)"
+    },
+    {
+      "code": 6001,
+      "name": "GameFull",
+      "msg": "Game already has two players"
+    },
+    {
+      "code": 6002,
+      "name": "CannotJoinOwnGame",
+      "msg": "Cannot join your own game"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidGameState",
+      "msg": "Game is not in the correct state for this action"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidCommitment",
+      "msg": "Invalid commitment hash - does not match revealed choice and nonce"
+    },
+    {
+      "code": 6005,
+      "name": "NotGameCreator",
+      "msg": "Only the game creator can cancel"
+    },
+    {
+      "code": 6006,
+      "name": "GameAlreadyStarted",
+      "msg": "Game already started, cannot cancel"
+    },
+    {
+      "code": 6007,
+      "name": "NotParticipant",
+      "msg": "Only game participants can reveal"
+    },
+    {
+      "code": 6008,
+      "name": "NotGameWinner",
+      "msg": "Only the winner can claim winnings"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidChoice",
+      "msg": "Choice must be 0 (heads) or 1 (tails)"
+    },
+    {
+      "code": 6010,
+      "name": "AlreadyRevealed",
+      "msg": "Already revealed your choice"
+    },
+    {
+      "code": 6011,
+      "name": "AlreadyClaimed",
+      "msg": "Winnings already claimed"
+    },
+    {
+      "code": 6012,
+      "name": "NotYourTurn",
+      "msg": "Not your turn"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidPosition",
+      "msg": "Invalid board position (must be 0-8)"
+    },
+    {
+      "code": 6014,
+      "name": "PositionOccupied",
+      "msg": "Position already occupied"
+    },
+    {
+      "code": 6015,
+      "name": "GameNotInProgress",
+      "msg": "Game is not in progress"
+    },
+    {
+      "code": 6016,
+      "name": "GameNotFinished",
+      "msg": "Game has not finished yet"
+    },
+    {
+      "code": 6017,
+      "name": "NotPlayer",
+      "msg": "Only players can claim winnings"
+    },
+    {
+      "code": 6018,
+      "name": "NotAuthorized",
+      "msg": "Not authorized to perform this action"
+    },
+    {
+      "code": 6019,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6020,
+      "name": "InsufficientFunds",
+      "msg": "Insufficient funds"
+    }
+  ],
+  "types": [
+    {
+      "name": "CoinflipGame",
+      "docs": [
+        "Coinflip game account"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "channel",
+            "docs": [
+              "The channel this game belongs to"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "player_a",
+            "docs": [
+              "Player A (game creator)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "player_b",
+            "docs": [
+              "Player B (joiner, None until joined)"
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "wager",
+            "docs": [
+              "Wager amount in lamports (each player contributes this)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "commitment_a",
+            "docs": [
+              "Player A's secret commitment (hash of their choice + nonce)"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "commitment_b",
+            "docs": [
+              "Player B's secret commitment (set when they join)"
+            ],
+            "type": {
+              "option": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "choice_a",
+            "docs": [
+              "Player A's revealed choice (0 = heads, 1 = tails)"
+            ],
+            "type": {
+              "option": "u8"
+            }
+          },
+          {
+            "name": "nonce_a",
+            "docs": [
+              "Player A's revealed nonce"
+            ],
+            "type": {
+              "option": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "choice_b",
+            "docs": [
+              "Player B's revealed choice"
+            ],
+            "type": {
+              "option": "u8"
+            }
+          },
+          {
+            "name": "nonce_b",
+            "docs": [
+              "Player B's revealed nonce"
+            ],
+            "type": {
+              "option": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "winner",
+            "docs": [
+              "The winner (set after both reveal)"
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "state",
+            "docs": [
+              "Game state"
+            ],
+            "type": {
+              "defined": {
+                "name": "GameState"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp when game was created"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "claimed",
+            "docs": [
+              "Whether winnings have been claimed"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GameState",
+      "docs": [
+        "Coinflip game state enum"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "WaitingForPlayer"
+          },
+          {
+            "name": "WaitingForReveal"
+          },
+          {
+            "name": "Completed"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicTacToeGame",
+      "docs": [
+        "Tic Tac Toe game account",
+        "Board layout:",
+        "0 | 1 | 2",
+        "-----------",
+        "3 | 4 | 5",
+        "-----------",
+        "6 | 7 | 8"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "channel",
+            "docs": [
+              "The channel this game belongs to"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "player_x",
+            "docs": [
+              "Player X (game creator, goes first)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "player_o",
+            "docs": [
+              "Player O (joiner)"
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "wager",
+            "docs": [
+              "Wager amount in lamports (each player contributes this)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "board",
+            "docs": [
+              "Game board: 0 = empty, 1 = X, 2 = O"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                9
+              ]
+            }
+          },
+          {
+            "name": "move_count",
+            "docs": [
+              "Number of moves made (0-9)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "winner",
+            "docs": [
+              "The winner (set when game ends, None for draw)"
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "state",
+            "docs": [
+              "Game state"
+            ],
+            "type": {
+              "defined": {
+                "name": "TicTacToeState"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp when game was created"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "claimed",
+            "docs": [
+              "Whether winnings have been claimed (or refunded on draw)"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicTacToeState",
+      "docs": [
+        "Tic Tac Toe game state enum"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "WaitingForPlayer"
+          },
+          {
+            "name": "PlayerXTurn"
+          },
+          {
+            "name": "PlayerOTurn"
+          },
+          {
+            "name": "XWins"
+          },
+          {
+            "name": "OWins"
+          },
+          {
+            "name": "Draw"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    }
+  ]
+}

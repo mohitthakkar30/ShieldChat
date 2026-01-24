@@ -25,6 +25,7 @@ import { LeaveChannelModal } from "@/components/LeaveChannelModal";
 import { useInvites } from "@/hooks/useInvites";
 import { useVoting } from "@/hooks/useVoting";
 import { CreatePollModal, PollCard } from "@/components/Poll";
+import { GamesModal } from "@/components/Games";
 import { useRouter } from "next/navigation";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
@@ -146,6 +147,7 @@ export default function ChannelPage() {
 
   const [showPollModal, setShowPollModal] = useState(false);
   const [pollsExpanded, setPollsExpanded] = useState(false);
+  const [showGamesModal, setShowGamesModal] = useState(false);
 
   // Merge revealed polls into messages as poll result cards
   const allMessages = useMemo(() => {
@@ -193,6 +195,7 @@ export default function ChannelPage() {
     setShowLeaveModal(false);
     setShowPollModal(false);
     setPollsExpanded(false);
+    setShowGamesModal(false);
     setPendingPayment(null);
     hasFetchedMessages.current = false;
     markedAsReadRef.current = new Set(); // Clear read tracking for new channel
@@ -447,6 +450,14 @@ export default function ChannelPage() {
           <div className="flex items-center space-x-2">
             {canAccess && (
               <>
+                <button
+                  onClick={() => setShowGamesModal(true)}
+                  className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 text-yellow-300 py-2 px-4 rounded-lg text-sm transition-colors flex items-center gap-2 border border-yellow-500/30"
+                  title="Channel Games"
+                >
+                  <span className="text-lg">🎲</span>
+                  Games
+                </button>
                 <button
                   onClick={() => setShowPollModal(true)}
                   className="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded-lg text-sm transition-colors flex items-center gap-2"
@@ -775,6 +786,15 @@ export default function ChannelPage() {
         onCreatePoll={createPoll}
         loading={pollsLoading}
       />
+
+      {/* Games Modal */}
+      {channelPda && (
+        <GamesModal
+          isOpen={showGamesModal}
+          onClose={() => setShowGamesModal(false)}
+          channelPubkey={channelPda}
+        />
+      )}
     </div>
   );
 }

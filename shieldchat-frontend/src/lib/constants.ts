@@ -10,6 +10,11 @@ export const VOTING_PROGRAM_ID = new PublicKey(
   "H19dGK9xWHppSSuAEv9TfgPyK1S2dB1zihBXPXQnWdC5"
 );
 
+// Arcium MXE Program ID (deployed on devnet)
+export const ARCIUM_MXE_PROGRAM_ID = new PublicKey(
+  "Bg4L8JiYF7EmoAXHMXtzSfMBkJg9b8fnNjYSPDTi7sMm"
+);
+
 // Inco Lightning Program ID (on devnet)
 export const INCO_LIGHTNING_PROGRAM_ID = new PublicKey(
   "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
@@ -37,6 +42,9 @@ export const STAKE_SEED = "stake";
 // Voting PDA Seeds
 export const POLL_SEED = "poll";
 export const VOTE_RECORD_SEED = "vote_record";
+
+// Arcium MXE PDA Seeds (Games)
+export const TICTACTOE_SEED = "tictactoe";
 
 // Limits
 export const MAX_METADATA_SIZE = 512;
@@ -163,5 +171,29 @@ export function getVoteRecordPDA(
       voter.toBytes(),
     ],
     VOTING_PROGRAM_ID
+  );
+}
+
+// Helper function to derive TicTacToeGame PDA
+export function getTicTacToePDA(
+  channel: PublicKey,
+  playerX: PublicKey,
+  nonce: bigint
+): [PublicKey, number] {
+  const nonceBuffer = new Uint8Array(8);
+  let n = nonce;
+  for (let i = 0; i < 8; i++) {
+    nonceBuffer[i] = Number(n & BigInt(0xff));
+    n = n >> BigInt(8);
+  }
+
+  return PublicKey.findProgramAddressSync(
+    [
+      new TextEncoder().encode(TICTACTOE_SEED),
+      channel.toBytes(),
+      playerX.toBytes(),
+      nonceBuffer,
+    ],
+    ARCIUM_MXE_PROGRAM_ID
   );
 }
