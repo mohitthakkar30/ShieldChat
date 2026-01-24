@@ -9,10 +9,12 @@ resolution = true
 [programs.localnet]
 shield_chat = "FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN"
 shieldchat_voting = "H19dGK9xWHppSSuAEv9TfgPyK1S2dB1zihBXPXQnWdC5"
+arcium_mxe = "Bg4L8JiYF7EmoAXHMXtzSfMBkJg9b8fnNjYSPDTi7sMm"
 
 [programs.devnet]
 shield_chat = "FVViRGPShMjCeSF3LDrp2qDjp6anRz9WAMiJrsGCRUzN"
 shieldchat_voting = "H19dGK9xWHppSSuAEv9TfgPyK1S2dB1zihBXPXQnWdC5"
+arcium_mxe = "Bg4L8JiYF7EmoAXHMXtzSfMBkJg9b8fnNjYSPDTi7sMm"
 inco_lightning = "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
 
 [registry]
