@@ -16,6 +16,7 @@ import {
   solToLamports,
 } from "@/lib/arcium-mxe";
 import GAMES_IDL from "@/types/arcium_mxe.json";
+import { uploadMessage } from "@/lib/ipfs";
 
 // ============================================================================
 // TYPES
@@ -34,10 +35,38 @@ export type TicTacToeGame = TicTacToeGameWithPda;
 // ============================================================================
 
 /**
+ * Helper to get state string from TicTacToeState enum
+ */
+function getStateString(state: TicTacToeState): string {
+  switch (state) {
+    case TicTacToeState.WaitingForPlayer:
+      return "waiting";
+    case TicTacToeState.PlayerXTurn:
+    case TicTacToeState.PlayerOTurn:
+      return "in_progress";
+    case TicTacToeState.XWins:
+      return "x_wins";
+    case TicTacToeState.OWins:
+      return "o_wins";
+    case TicTacToeState.Draw:
+      return "draw";
+    case TicTacToeState.Cancelled:
+      return "cancelled";
+    default:
+      return "unknown";
+  }
+}
+
+/**
  * Hook for managing Tic Tac Toe games in ShieldChat channels
  * @param channelPubkey - The channel PublicKey
+ * @param logMessage - Optional function to log game messages on-chain
  */
-export function useGames(channelPubkey: PublicKey | null) {
+export function useGames(
+  channelPubkey: PublicKey | null,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  logMessage?: (channel: PublicKey, content: string, ipfsCid: string) => Promise<any>
+) {
   const anchorWallet = useAnchorWallet();
   const { publicKey } = useWallet();
   const [loading, setLoading] = useState(false);
@@ -101,6 +130,36 @@ export function useGames(channelPubkey: PublicKey | null) {
 
         console.log("[useGames] Tic Tac Toe game created:", gamePda.toString());
 
+        // Log game creation as a message in the channel
+        if (logMessage) {
+          try {
+            const gameContent = JSON.stringify({
+              type: "game_created",
+              gameId: gamePda.toString(),
+              gameType: "tictactoe",
+              state: "waiting",
+              playerX: publicKey.toString(),
+              wager: solToLamports(wagerSol).toString(),
+              createdAt: new Date().toISOString(),
+            });
+
+            // Upload to IPFS
+            const ipfsMessage = {
+              content: gameContent,
+              sender: publicKey.toString(),
+              timestamp: Date.now(),
+              channelId: channelPubkey.toString(),
+            };
+            const ipfsCid = await uploadMessage(ipfsMessage);
+
+            await logMessage(channelPubkey, gameContent, ipfsCid);
+            console.log("[useGames] Game creation logged as message");
+          } catch (logErr) {
+            console.error("[useGames] Failed to log game creation:", logErr);
+            // Don't throw - game was created successfully
+          }
+        }
+
         // Refresh games
         await fetchGames();
 
@@ -141,6 +200,38 @@ export function useGames(channelPubkey: PublicKey | null) {
 
         console.log("[useGames] Joined TTT game:", gamePda.toString());
 
+        // Log game joined message
+        if (logMessage && channelPubkey) {
+          try {
+            // Fetch updated game state
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const account = await (program.account as any).ticTacToeGame.fetch(gamePda);
+
+            const joinContent = JSON.stringify({
+              type: "game_joined",
+              gameId: gamePda.toString(),
+              gameType: "tictactoe",
+              state: "in_progress",
+              playerX: account.playerX.toString(),
+              playerO: publicKey.toString(),
+              wager: account.wager.toString(),
+              createdAt: new Date(account.createdAt.toNumber() * 1000).toISOString(),
+            });
+
+            const ipfsMessage = {
+              content: joinContent,
+              sender: publicKey.toString(),
+              timestamp: Date.now(),
+              channelId: channelPubkey.toString(),
+            };
+            const ipfsCid = await uploadMessage(ipfsMessage);
+            await logMessage(channelPubkey, joinContent, ipfsCid);
+            console.log("[useGames] Game join logged as message");
+          } catch (logErr) {
+            console.error("[useGames] Failed to log game join:", logErr);
+          }
+        }
+
         // Refresh games
         await fetchGames();
       } catch (err) {
@@ -151,7 +242,7 @@ export function useGames(channelPubkey: PublicKey | null) {
         setLoading(false);
       }
     },
-    [anchorWallet, publicKey, getGamesProgram]
+    [anchorWallet, publicKey, getGamesProgram, logMessage, channelPubkey]
   );
 
   // Make a move in Tic Tac Toe
@@ -219,6 +310,50 @@ export function useGames(channelPubkey: PublicKey | null) {
 
         console.log("[useGames] Claimed TTT winnings:", gamePda.toString());
 
+        // Log game result as a message in the channel
+        if (logMessage && channelPubkey) {
+          try {
+            // Fetch final game state directly
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const account = await (program.account as any).ticTacToeGame.fetch(gamePda);
+            const finalGame = {
+              pubkey: gamePda,
+              account: {
+                ...account,
+                state: parseTicTacToeState(account.state),
+              } as TicTacToeGameAccount,
+            };
+
+            const resultContent = JSON.stringify({
+              type: "game_result",
+              gameId: gamePda.toString(),
+              gameType: "tictactoe",
+              state: getStateString(finalGame.account.state),
+              playerX: finalGame.account.playerX.toString(),
+              playerO: finalGame.account.playerO?.toString(),
+              winner: finalGame.account.winner?.toString(),
+              wager: finalGame.account.wager.toString(),
+              createdAt: new Date(finalGame.account.createdAt.toNumber() * 1000).toISOString(),
+              board: finalGame.account.board,
+            });
+
+            // Upload to IPFS
+            const ipfsMessage = {
+              content: resultContent,
+              sender: publicKey.toString(),
+              timestamp: Date.now(),
+              channelId: channelPubkey.toString(),
+            };
+            const ipfsCid = await uploadMessage(ipfsMessage);
+
+            await logMessage(channelPubkey, resultContent, ipfsCid);
+            console.log("[useGames] Game result logged as message");
+          } catch (logErr) {
+            console.error("[useGames] Failed to log game result:", logErr);
+            // Don't throw - winnings were claimed successfully
+          }
+        }
+
         // Refresh games
         await fetchGames();
       } catch (err) {
@@ -229,7 +364,7 @@ export function useGames(channelPubkey: PublicKey | null) {
         setLoading(false);
       }
     },
-    [anchorWallet, publicKey, getGamesProgram]
+    [anchorWallet, publicKey, getGamesProgram, logMessage, channelPubkey]
   );
 
   // Cancel Tic Tac Toe game

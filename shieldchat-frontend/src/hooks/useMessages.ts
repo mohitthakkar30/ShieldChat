@@ -132,6 +132,18 @@ export interface PollResultAttachment {
   revealedAt: string;
 }
 
+export interface GameAttachment {
+  gameId: string;
+  gameType: "tictactoe";
+  state: string; // "waiting" | "in_progress" | "x_wins" | "o_wins" | "draw" | "cancelled"
+  playerX: string;
+  playerO?: string;
+  winner?: string;
+  wager: number; // in lamports
+  createdAt: string;
+  board?: number[]; // final board state for results
+}
+
 export interface ChatMessage {
   id: string;
   content: string;
@@ -140,6 +152,33 @@ export interface ChatMessage {
   txSignature?: string;
   payment?: PaymentAttachment;
   pollResult?: PollResultAttachment;
+  game?: GameAttachment;
+}
+
+/**
+ * Try to parse game attachment from message content
+ * Returns game attachment if content is a game message, null otherwise
+ */
+function parseGameContent(content: string): GameAttachment | null {
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed.type === "game_created" || parsed.type === "game_result" || parsed.type === "game_joined") {
+      return {
+        gameId: parsed.gameId,
+        gameType: parsed.gameType || "tictactoe",
+        state: parsed.state,
+        playerX: parsed.playerX,
+        playerO: parsed.playerO,
+        winner: parsed.winner,
+        wager: Number(parsed.wager),
+        createdAt: parsed.createdAt,
+        board: parsed.board,
+      };
+    }
+  } catch {
+    // Not JSON or not a game message, ignore
+  }
+  return null;
 }
 
 /**
@@ -369,13 +408,17 @@ export function useMessages(channelPda: PublicKey | null) {
 
         const txSignature = tx.transaction.signatures[0];
 
+        // Check if content is a game message
+        const gameAttachment = parseGameContent(content);
+
         parsedMessages.push({
           id: `${txSignature}-${event.messageNumber.toString()}`,
-          content,
+          content: gameAttachment ? "" : content, // Empty content for game messages
           sender: event.sender.toString(),
           timestamp: txTimestamp,
           txSignature,
           payment,
+          game: gameAttachment || undefined,
         });
 
         // Prepare for Supabase cache
@@ -443,13 +486,17 @@ export function useMessages(channelPda: PublicKey | null) {
 
           const txSignature = tx.transaction.signatures[0];
 
+          // Check if content is a game message
+          const gameAttachment = parseGameContent(content);
+
           parsedMessages.push({
             id: `${txSignature}-${messageNumber}`,
-            content,
+            content: gameAttachment ? "" : content, // Empty content for game messages
             sender,
             timestamp: txTimestamp,
             txSignature,
             payment,
+            game: gameAttachment || undefined,
           });
 
           // Prepare for Supabase cache
@@ -537,15 +584,29 @@ export function useMessages(channelPda: PublicKey | null) {
                   console.error("Failed to decrypt cached message:", decryptErr);
                   content = "[Encrypted message - decryption failed]";
                 }
+              } else if (cached.ipfs_cid) {
+                // No encrypted data - fetch from IPFS (for game messages, etc.)
+                try {
+                  const ipfsMessage = await fetchMessage(cached.ipfs_cid);
+                  if (ipfsMessage) {
+                    content = ipfsMessage.content;
+                  }
+                } catch {
+                  // IPFS fetch failed, keep default content
+                }
               }
+
+              // Check if content is a game message
+              const gameAttachment = parseGameContent(content);
 
               decryptedMessages.push({
                 id: `${cached.tx_signature}-${cached.message_number || 0}`,
-                content,
+                content: gameAttachment ? "" : content, // Empty content for game messages
                 sender: cached.sender,
                 timestamp: cached.timestamp,
                 txSignature: cached.tx_signature,
                 payment: cached.payment || undefined,
+                game: gameAttachment || undefined,
               });
             }
 
@@ -748,14 +809,18 @@ export function useMessages(channelPda: PublicKey | null) {
           return false;
         }
 
+        // Check if content is a game message
+        const gameAttachment = parseGameContent(content);
+
         // Create the message object
         const newMessage: ChatMessage = {
           id: `${signature}-helius`,
-          content,
+          content: gameAttachment ? "" : content, // Empty content for game messages
           sender: senderAddress,
           timestamp: messageTimestamp,
           txSignature: signature,
           payment: ipfsMessage.payment, // Include payment attachment if present
+          game: gameAttachment || undefined,
         };
 
         // Add to messages if not already present (avoid duplicates)

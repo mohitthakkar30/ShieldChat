@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useGames, TicTacToeGame } from "@/hooks/useGames";
@@ -16,6 +16,10 @@ interface GamesModalProps {
   isOpen: boolean;
   onClose: () => void;
   channelPubkey: PublicKey;
+  initialGame?: TicTacToeGame | null; // Open directly to this game
+  onInitialGameHandled?: () => void; // Callback when initialGame has been handled
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  logMessage?: (channel: PublicKey, content: string, ipfsCid: string) => Promise<any>;
 }
 
 type GameView = "list" | "create-ttt" | "ttt";
@@ -24,6 +28,9 @@ export default function GamesModal({
   isOpen,
   onClose,
   channelPubkey,
+  initialGame,
+  onInitialGameHandled,
+  logMessage,
 }: GamesModalProps) {
   const { publicKey } = useWallet();
   const {
@@ -31,12 +38,21 @@ export default function GamesModal({
     loading,
     createTicTacToeGame,
     refreshGames,
-  } = useGames(channelPubkey);
+  } = useGames(channelPubkey, logMessage);
 
   const [view, setView] = useState<GameView>("list");
   const [selectedGame, setSelectedGame] = useState<TicTacToeGame | null>(null);
   const [wager, setWager] = useState("0.01");
   const [creating, setCreating] = useState(false);
+
+  // Handle initialGame prop - open directly to that game
+  useEffect(() => {
+    if (isOpen && initialGame) {
+      setSelectedGame(initialGame);
+      setView("ttt");
+      onInitialGameHandled?.();
+    }
+  }, [isOpen, initialGame, onInitialGameHandled]);
 
   if (!isOpen) return null;
 
@@ -173,6 +189,7 @@ export default function GamesModal({
               game={selectedGame}
               channelPubkey={channelPubkey}
               onBack={goBack}
+              logMessage={logMessage}
             />
           )}
         </div>

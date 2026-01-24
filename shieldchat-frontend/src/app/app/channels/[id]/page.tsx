@@ -25,7 +25,8 @@ import { LeaveChannelModal } from "@/components/LeaveChannelModal";
 import { useInvites } from "@/hooks/useInvites";
 import { useVoting } from "@/hooks/useVoting";
 import { CreatePollModal, PollCard } from "@/components/Poll";
-import { GamesModal } from "@/components/Games";
+import { GamesModal, GameMessageCard } from "@/components/Games";
+import { useGames, TicTacToeGame } from "@/hooks/useGames";
 import { useRouter } from "next/navigation";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
@@ -148,6 +149,13 @@ export default function ChannelPage() {
   const [showPollModal, setShowPollModal] = useState(false);
   const [pollsExpanded, setPollsExpanded] = useState(false);
   const [showGamesModal, setShowGamesModal] = useState(false);
+  const [selectedGameFromMessage, setSelectedGameFromMessage] = useState<TicTacToeGame | null>(null);
+
+  // Games hook with logMessage for logging game creation/results as messages
+  const {
+    ticTacToeGames,
+    refreshGames,
+  } = useGames(channelPda, logMessage);
 
   // Merge revealed polls into messages as poll result cards
   const allMessages = useMemo(() => {
@@ -366,6 +374,20 @@ export default function ChannelPage() {
       setSending(false);
     }
   };
+
+  // Handle clicking on a game message card
+  const handleGameMessageClick = useCallback((gameId: string) => {
+    // Find the game in the loaded games list
+    const game = ticTacToeGames.find(g => g.pubkey.toString() === gameId);
+    if (game) {
+      setSelectedGameFromMessage(game);
+      setShowGamesModal(true);
+    } else {
+      // Game not in list, just open the modal (it will refresh)
+      refreshGames();
+      setShowGamesModal(true);
+    }
+  }, [ticTacToeGames, refreshGames]);
 
   if (loading && !channel) {
     return (
@@ -625,6 +647,8 @@ export default function ChannelPage() {
                     markAsRead(index + 1);
                   }
                 }}
+                onGameClick={handleGameMessageClick}
+                currentUser={publicKey?.toString()}
               />
             );
           })
@@ -791,8 +815,14 @@ export default function ChannelPage() {
       {channelPda && (
         <GamesModal
           isOpen={showGamesModal}
-          onClose={() => setShowGamesModal(false)}
+          onClose={() => {
+            setShowGamesModal(false);
+            setSelectedGameFromMessage(null);
+          }}
           channelPubkey={channelPda}
+          initialGame={selectedGameFromMessage}
+          onInitialGameHandled={() => setSelectedGameFromMessage(null)}
+          logMessage={logMessage}
         />
       )}
     </div>
@@ -805,6 +835,8 @@ interface MessageBubbleProps {
   isOwnMessage: boolean;
   isRead: boolean;
   onVisible: () => void;
+  onGameClick?: (gameId: string) => void;
+  currentUser?: string;
 }
 
 function MessageBubble({
@@ -813,6 +845,8 @@ function MessageBubble({
   isOwnMessage,
   isRead,
   onVisible,
+  onGameClick,
+  currentUser,
 }: MessageBubbleProps) {
   const timestamp = new Date(message.timestamp);
   const senderOnline = isUserOnline(message.sender);
@@ -852,13 +886,16 @@ function MessageBubble({
             <ReadReceipt sent={true} delivered={true} read={isRead} />
           )}
         </div>
-        <div className={`mt-1 px-4 py-2 rounded-2xl ${
-          isOwnMessage
-            ? 'bg-purple-600 text-white rounded-br-md'
-            : 'bg-gray-700 text-gray-300 rounded-bl-md'
-        }`}>
-          <p className="break-words">{message.content}</p>
-        </div>
+        {/* Only show message bubble if there's text content (not for game-only messages) */}
+        {message.content && (
+          <div className={`mt-1 px-4 py-2 rounded-2xl ${
+            isOwnMessage
+              ? 'bg-purple-600 text-white rounded-br-md'
+              : 'bg-gray-700 text-gray-300 rounded-bl-md'
+          }`}>
+            <p className="break-words">{message.content}</p>
+          </div>
+        )}
 
         {/* Payment Attachment Display */}
         {message.payment && (
@@ -942,6 +979,15 @@ function MessageBubble({
               {message.pollResult.totalVotes} total vote{message.pollResult.totalVotes !== 1 ? 's' : ''}
             </p>
           </div>
+        )}
+
+        {/* Game Card */}
+        {message.game && onGameClick && (
+          <GameMessageCard
+            game={message.game}
+            currentUser={currentUser}
+            onClick={() => onGameClick(message.game!.gameId)}
+          />
         )}
       </div>
     </div>

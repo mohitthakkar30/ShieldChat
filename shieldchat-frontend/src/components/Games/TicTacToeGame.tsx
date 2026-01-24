@@ -16,12 +16,15 @@ interface TicTacToeGameProps {
   game: TicTacToeGameType;
   channelPubkey: PublicKey;
   onBack: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  logMessage?: (channel: PublicKey, content: string, ipfsCid: string) => Promise<any>;
 }
 
 export default function TicTacToeGameComponent({
   game: initialGame,
   channelPubkey,
   onBack,
+  logMessage,
 }: TicTacToeGameProps) {
   const { publicKey } = useWallet();
   const {
@@ -31,7 +34,7 @@ export default function TicTacToeGameComponent({
     cancelTicTacToeGame,
     subscribeToGame,
     fetchSingleTTTGame,
-  } = useGames(channelPubkey);
+  } = useGames(channelPubkey, logMessage);
 
   const [game, setGame] = useState(initialGame);
   const [loading, setLoading] = useState(false);
