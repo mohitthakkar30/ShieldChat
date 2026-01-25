@@ -1,23 +1,25 @@
 import type { Metadata } from "next";
-import { Space_Mono, Outfit, Inter } from "next/font/google";
+import { JetBrains_Mono, Sora, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/components/WalletProvider";
 
-// Terminal aesthetic - for code/technical elements
-const spaceMono = Space_Mono({
-  weight: ["400", "700"],
+// Terminal/code font - JetBrains Mono for better code readability
+const jetbrainsMono = JetBrains_Mono({
+  weight: ["400", "500"],
   subsets: ["latin"],
   variable: "--font-mono",
 });
 
-// Modern geometric - for headings
-const outfit = Outfit({
+// Display font - Sora for dramatic headers
+const sora = Sora({
+  weight: ["400", "600", "700"],
   subsets: ["latin"],
   variable: "--font-display",
 });
 
-// Clean readable - for body text
-const inter = Inter({
+// Body font - Plus Jakarta Sans for clean readability
+const plusJakarta = Plus_Jakarta_Sans({
+  weight: ["400", "500", "600"],
   subsets: ["latin"],
   variable: "--font-sans",
 });
@@ -36,7 +38,7 @@ export default function RootLayout({
     <html lang="en">
       <body
         suppressHydrationWarning
-        className={`${inter.variable} ${spaceMono.variable} ${outfit.variable} font-sans antialiased bg-[#030712] text-gray-50`}
+        className={`${plusJakarta.variable} ${jetbrainsMono.variable} ${sora.variable} font-sans antialiased`}
       >
         <WalletProvider>{children}</WalletProvider>
       </body>

@@ -11,7 +11,7 @@ import { PaymentAttachment } from "./shadowwire";
 
 // Public IPFS gateways for fetching content
 const IPFS_GATEWAYS = [
-  "plum-absent-hedgehog-929.mypinata.cloud",
+  "https://plum-absent-hedgehog-929.mypinata.cloud/ipfs/",
   "https://gateway.pinata.cloud/ipfs/",
   "https://ipfs.io/ipfs/",
   "https://cloudflare-ipfs.com/ipfs/",

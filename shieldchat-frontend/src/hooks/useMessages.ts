@@ -282,15 +282,24 @@ export function useMessages(channelPda: PublicKey | null) {
   const isFetchingRef = useRef(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Track current messages count to avoid showing loading when we have data
+  const messagesRef = useRef<ChatMessage[]>([]);
+
   // Track current channel to prevent stale data from old fetches
   const currentChannelRef = useRef<string | null>(null);
 
-  // Update current channel ref and clear state when channel changes
+  // Update current channel ref when channel changes
+  // NOTE: We intentionally do NOT clear messages here - keep stale data visible
+  // while new messages load. This prevents skeleton flash during decryption.
+  // The new channel's messages will replace old ones when fetchChannelMessages completes.
   useEffect(() => {
     const channelId = channelPda?.toString() || null;
     currentChannelRef.current = channelId;
 
-    setMessages([]);
+    // Don't clear messages - keep stale visible while loading (better UX)
+    // setMessages([]);
+    // messagesRef.current = [];
+
     setError(null);
     setLoading(false);
     isFetchingRef.current = false; // Reset fetch lock so new channel can fetch
@@ -543,8 +552,11 @@ export function useMessages(channelPda: PublicKey | null) {
     }
 
     isFetchingRef.current = true;
-    // Only show loading spinner on initial load, not background refreshes
-    if (!isBackgroundRefresh) {
+    // Only show loading spinner if:
+    // 1. Not a background refresh AND
+    // 2. We don't have any existing messages (otherwise show stale data while refreshing)
+    const hasExistingMessages = messagesRef.current.length > 0;
+    if (!isBackgroundRefresh && !hasExistingMessages) {
       setLoading(true);
     }
     setError(null);
@@ -564,16 +576,8 @@ export function useMessages(channelPda: PublicKey | null) {
           if (cachedMessages.length > 0) {
             console.log(`[useMessages] Using ${cachedMessages.length} cached messages from Supabase`);
 
-            // Decrypt cached messages client-side
-            const decryptedMessages: ChatMessage[] = [];
-
-            for (const cached of cachedMessages) {
-              // Check if channel changed during decryption loop
-              if (currentChannelRef.current !== channelId) {
-                console.log("[useMessages] Channel changed during decryption, aborting");
-                return [];
-              }
-
+            // Decrypt cached messages IN PARALLEL for faster loading
+            const decryptionPromises = cachedMessages.map(async (cached) => {
               let content = "[Encrypted message]";
 
               // Decrypt if we have encrypted data
@@ -599,7 +603,7 @@ export function useMessages(channelPda: PublicKey | null) {
               // Check if content is a game message
               const gameAttachment = parseGameContent(content);
 
-              decryptedMessages.push({
+              return {
                 id: `${cached.tx_signature}-${cached.message_number || 0}`,
                 content: gameAttachment ? "" : content, // Empty content for game messages
                 sender: cached.sender,
@@ -607,11 +611,20 @@ export function useMessages(channelPda: PublicKey | null) {
                 txSignature: cached.tx_signature,
                 payment: cached.payment || undefined,
                 game: gameAttachment || undefined,
-              });
+              } as ChatMessage;
+            });
+
+            const decryptedMessages = await Promise.all(decryptionPromises);
+
+            // Check if channel changed during decryption
+            if (currentChannelRef.current !== channelId) {
+              console.log("[useMessages] Channel changed during decryption, aborting");
+              return [];
             }
 
             // Final check before setting state
             if (currentChannelRef.current === channelId) {
+              messagesRef.current = decryptedMessages;
               setMessages(decryptedMessages);
             }
 
@@ -627,6 +640,7 @@ export function useMessages(channelPda: PublicKey | null) {
                 saveMessagesToCache(dbMessages);
 
                 // Also update the displayed messages with the full list
+                messagesRef.current = ipfsMessages;
                 setMessages(ipfsMessages);
               }
             }).catch(err => {
@@ -653,6 +667,7 @@ export function useMessages(channelPda: PublicKey | null) {
 
       // Final check before setting state
       if (currentChannelRef.current === channelId) {
+        messagesRef.current = parsedMessages;
         setMessages(parsedMessages);
 
         // Async: Save to Supabase for next time (non-blocking)
@@ -726,7 +741,11 @@ export function useMessages(channelPda: PublicKey | null) {
         payment: payment, // Include payment for local display
       };
 
-      setMessages(prev => [...prev, newMessage]);
+      setMessages(prev => {
+        const updated = [...prev, newMessage];
+        messagesRef.current = updated;
+        return updated;
+      });
 
       return cid;
     },
@@ -737,6 +756,7 @@ export function useMessages(channelPda: PublicKey | null) {
    * Clear messages (for cleanup)
    */
   const clearMessages = useCallback(() => {
+    messagesRef.current = [];
     setMessages([]);
   }, []);
 
@@ -835,7 +855,9 @@ export function useMessages(channelPda: PublicKey | null) {
             return prev;
           }
           console.log("[useMessages] Added message from Helius:", content.slice(0, 30) + "...");
-          return [...prev, newMessage];
+          const updated = [...prev, newMessage];
+          messagesRef.current = updated;
+          return updated;
         });
 
         // Async: Save to Supabase cache (non-blocking)
