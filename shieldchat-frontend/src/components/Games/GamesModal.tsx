@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { useGames, TicTacToeGame } from "@/hooks/useGames";
 import {
   TicTacToeState,
@@ -18,8 +18,6 @@ interface GamesModalProps {
   channelPubkey: PublicKey;
   initialGame?: TicTacToeGame | null; // Open directly to this game
   onInitialGameHandled?: () => void; // Callback when initialGame has been handled
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  logMessage?: (channel: PublicKey, content: string, ipfsCid: string) => Promise<any>;
 }
 
 type GameView = "list" | "create-ttt" | "ttt";
@@ -30,7 +28,6 @@ export default function GamesModal({
   channelPubkey,
   initialGame,
   onInitialGameHandled,
-  logMessage,
 }: GamesModalProps) {
   const { publicKey } = useWallet();
   const {
@@ -38,7 +35,7 @@ export default function GamesModal({
     loading,
     createTicTacToeGame,
     refreshGames,
-  } = useGames(channelPubkey, logMessage);
+  } = useGames(channelPubkey);
 
   const [view, setView] = useState<GameView>("list");
   const [selectedGame, setSelectedGame] = useState<TicTacToeGame | null>(null);
@@ -189,7 +186,6 @@ export default function GamesModal({
               game={selectedGame}
               channelPubkey={channelPubkey}
               onBack={goBack}
-              logMessage={logMessage}
             />
           )}
         </div>

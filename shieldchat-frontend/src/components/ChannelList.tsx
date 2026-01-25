@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useShieldChat, Channel } from "@/hooks/useShieldChat";
 import { parseChannelType } from "@/lib/anchor";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 
 interface ChannelListProps {
   onCreateChannel: () => void;

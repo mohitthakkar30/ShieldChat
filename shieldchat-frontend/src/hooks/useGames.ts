@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useState, useEffect, useRef } from "react";
-import { useAnchorWallet, useWallet } from "@solana/wallet-adapter-react";
-import { PublicKey, SystemProgram, Connection } from "@solana/web3.js";
+import { useCallback, useState, useEffect, useRef, useMemo } from "react";
+import { usePrivyAnchorWallet } from "@/hooks/usePrivyAnchorWallet";
+import { PublicKey, SystemProgram, Connection, Transaction } from "@solana/web3.js";
 import * as anchor from "@coral-xyz/anchor";
+import { Buffer } from "buffer";
 
 import {
   RPC_ENDPOINT,
   getTicTacToePDA,
+  getMemberPDA,
 } from "@/lib/constants";
 import {
   TicTacToeGameAccount,
@@ -16,6 +18,7 @@ import {
   solToLamports,
 } from "@/lib/arcium-mxe";
 import GAMES_IDL from "@/types/arcium_mxe.json";
+import SHIELDCHAT_IDL from "@/idl/shield_chat.json";
 import { uploadMessage } from "@/lib/ipfs";
 
 // ============================================================================
@@ -59,16 +62,11 @@ function getStateString(state: TicTacToeState): string {
 
 /**
  * Hook for managing Tic Tac Toe games in ShieldChat channels
+ * Game actions are combined with message logging in single transactions for efficiency
  * @param channelPubkey - The channel PublicKey
- * @param logMessage - Optional function to log game messages on-chain
  */
-export function useGames(
-  channelPubkey: PublicKey | null,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  logMessage?: (channel: PublicKey, content: string, ipfsCid: string) => Promise<any>
-) {
-  const anchorWallet = useAnchorWallet();
-  const { publicKey } = useWallet();
+export function useGames(channelPubkey: PublicKey | null) {
+  const { wallet, publicKey, sendTransaction } = usePrivyAnchorWallet();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ticTacToeGames, setTicTacToeGames] = useState<TicTacToeGameWithPda[]>(
@@ -80,6 +78,18 @@ export function useGames(
   // Convert PublicKey to string for comparisons
   const channelPda = channelPubkey?.toString() || null;
 
+  // Create a sponsored wallet object that includes sendTransaction for gas sponsorship
+  const anchorWallet = useMemo(() => {
+    if (!wallet || !sendTransaction) return undefined;
+    return {
+      ...wallet,
+      sendTransaction,
+    };
+  }, [wallet, sendTransaction]);
+
+  // Get shared connection
+  const connection = useMemo(() => new Connection(RPC_ENDPOINT, "confirmed"), []);
+
   // Get the games program
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getGamesProgram = useCallback((): anchor.Program<any> => {
@@ -87,23 +97,37 @@ export function useGames(
       throw new Error("Wallet not connected");
     }
 
-    const connection = new Connection(RPC_ENDPOINT, "confirmed");
     const provider = new anchor.AnchorProvider(connection, anchorWallet, {
       commitment: "confirmed",
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return new anchor.Program(GAMES_IDL as any, provider);
-  }, [anchorWallet]);
+  }, [anchorWallet, connection]);
+
+  // Get the ShieldChat program for message logging
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getShieldChatProgram = useCallback((): anchor.Program<any> => {
+    if (!anchorWallet) {
+      throw new Error("Wallet not connected");
+    }
+
+    const provider = new anchor.AnchorProvider(connection, anchorWallet, {
+      commitment: "confirmed",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return new anchor.Program(SHIELDCHAT_IDL as any, provider);
+  }, [anchorWallet, connection]);
 
   // ============================================================================
   // TIC TAC TOE FUNCTIONS
   // ============================================================================
 
-  // Create a new Tic Tac Toe game
+  // Create a new Tic Tac Toe game (combined with message logging in single transaction)
   const createTicTacToeGame = useCallback(
     async (wagerSol: number): Promise<PublicKey> => {
-      if (!channelPda || !anchorWallet || !publicKey) {
+      if (!channelPda || !anchorWallet || !publicKey || !sendTransaction) {
         throw new Error("Wallet not connected or channel not selected");
       }
 
@@ -111,14 +135,16 @@ export function useGames(
       setError(null);
 
       try {
-        const program = getGamesProgram();
+        const gamesProgram = getGamesProgram();
+        const shieldChatProgram = getShieldChatProgram();
         const channelPubkey = new PublicKey(channelPda);
         const nonce = BigInt(Date.now());
 
         const [gamePda] = getTicTacToePDA(channelPubkey, publicKey, nonce);
 
+        // Build game creation instruction
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (program.methods as any)
+        const createGameIx = await (gamesProgram.methods as any)
           .createTttGame(solToLamports(wagerSol), new anchor.BN(nonce.toString()))
           .accounts({
             playerX: publicKey,
@@ -126,39 +152,67 @@ export function useGames(
             game: gamePda,
             systemProgram: SystemProgram.programId,
           })
-          .rpc();
+          .instruction();
 
-        console.log("[useGames] Tic Tac Toe game created:", gamePda.toString());
+        // Prepare message content for logging
+        const gameContent = JSON.stringify({
+          type: "game_created",
+          gameId: gamePda.toString(),
+          gameType: "tictactoe",
+          state: "waiting",
+          playerX: publicKey.toString(),
+          wager: solToLamports(wagerSol).toString(),
+          createdAt: new Date().toISOString(),
+        });
 
-        // Log game creation as a message in the channel
-        if (logMessage) {
-          try {
-            const gameContent = JSON.stringify({
-              type: "game_created",
-              gameId: gamePda.toString(),
-              gameType: "tictactoe",
-              state: "waiting",
-              playerX: publicKey.toString(),
-              wager: solToLamports(wagerSol).toString(),
-              createdAt: new Date().toISOString(),
-            });
+        // Upload to IPFS
+        const ipfsMessage = {
+          content: gameContent,
+          sender: publicKey.toString(),
+          timestamp: Date.now(),
+          channelId: channelPubkey.toString(),
+        };
+        const ipfsCid = await uploadMessage(ipfsMessage);
 
-            // Upload to IPFS
-            const ipfsMessage = {
-              content: gameContent,
-              sender: publicKey.toString(),
-              timestamp: Date.now(),
-              channelId: channelPubkey.toString(),
-            };
-            const ipfsCid = await uploadMessage(ipfsMessage);
+        // Compute message hash (SHA256 of content)
+        const encoder = new TextEncoder();
+        const data = encoder.encode(gameContent);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const messageHash = Array.from(new Uint8Array(hashBuffer));
 
-            await logMessage(channelPubkey, gameContent, ipfsCid);
-            console.log("[useGames] Game creation logged as message");
-          } catch (logErr) {
-            console.error("[useGames] Failed to log game creation:", logErr);
-            // Don't throw - game was created successfully
-          }
-        }
+        // Get member PDA for message logging
+        const [memberPda] = getMemberPDA(channelPubkey, publicKey);
+
+        // Build logMessage instruction
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const logMessageIx = await (shieldChatProgram.methods as any)
+          .logMessage(messageHash, Buffer.from(ipfsCid))
+          .accounts({
+            channel: channelPubkey,
+            member: memberPda,
+            sender: publicKey,
+          })
+          .instruction();
+
+        // Create combined transaction with both instructions
+        const tx = new Transaction();
+        tx.add(createGameIx);
+        tx.add(logMessageIx);
+
+        // Get recent blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+        tx.recentBlockhash = blockhash;
+        tx.lastValidBlockHeight = lastValidBlockHeight;
+        tx.feePayer = publicKey;
+
+        // Send via sponsored wallet (single transaction for both operations)
+        const signature = await sendTransaction(tx, connection);
+        console.log("[useGames] Combined tx signature:", signature);
+
+        // Wait for confirmation
+        await connection.confirmTransaction(signature, "confirmed");
+
+        console.log("[useGames] Tic Tac Toe game created + message logged:", gamePda.toString());
 
         // Refresh games
         await fetchGames();
@@ -172,13 +226,13 @@ export function useGames(
         setLoading(false);
       }
     },
-    [channelPda, anchorWallet, publicKey, getGamesProgram]
+    [channelPda, anchorWallet, publicKey, sendTransaction, getGamesProgram, getShieldChatProgram, connection]
   );
 
-  // Join an existing Tic Tac Toe game
+  // Join an existing Tic Tac Toe game (combined with message logging in single transaction)
   const joinTicTacToeGame = useCallback(
     async (gamePda: PublicKey): Promise<void> => {
-      if (!anchorWallet || !publicKey) {
+      if (!anchorWallet || !publicKey || !sendTransaction || !channelPubkey) {
         throw new Error("Wallet not connected");
       }
 
@@ -186,51 +240,84 @@ export function useGames(
       setError(null);
 
       try {
-        const program = getGamesProgram();
+        const gamesProgram = getGamesProgram();
+        const shieldChatProgram = getShieldChatProgram();
 
+        // Fetch game state first to get playerX info for the message
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (program.methods as any)
+        const account = await (gamesProgram.account as any).ticTacToeGame.fetch(gamePda);
+
+        // Build join game instruction
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const joinGameIx = await (gamesProgram.methods as any)
           .joinTttGame()
           .accounts({
             playerO: publicKey,
             game: gamePda,
             systemProgram: SystemProgram.programId,
           })
-          .rpc();
+          .instruction();
 
-        console.log("[useGames] Joined TTT game:", gamePda.toString());
+        // Prepare message content for logging
+        const joinContent = JSON.stringify({
+          type: "game_joined",
+          gameId: gamePda.toString(),
+          gameType: "tictactoe",
+          state: "in_progress",
+          playerX: account.playerX.toString(),
+          playerO: publicKey.toString(),
+          wager: account.wager.toString(),
+          createdAt: new Date(account.createdAt.toNumber() * 1000).toISOString(),
+        });
 
-        // Log game joined message
-        if (logMessage && channelPubkey) {
-          try {
-            // Fetch updated game state
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const account = await (program.account as any).ticTacToeGame.fetch(gamePda);
+        // Upload to IPFS
+        const ipfsMessage = {
+          content: joinContent,
+          sender: publicKey.toString(),
+          timestamp: Date.now(),
+          channelId: channelPubkey.toString(),
+        };
+        const ipfsCid = await uploadMessage(ipfsMessage);
 
-            const joinContent = JSON.stringify({
-              type: "game_joined",
-              gameId: gamePda.toString(),
-              gameType: "tictactoe",
-              state: "in_progress",
-              playerX: account.playerX.toString(),
-              playerO: publicKey.toString(),
-              wager: account.wager.toString(),
-              createdAt: new Date(account.createdAt.toNumber() * 1000).toISOString(),
-            });
+        // Compute message hash (SHA256 of content)
+        const encoder = new TextEncoder();
+        const data = encoder.encode(joinContent);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const messageHash = Array.from(new Uint8Array(hashBuffer));
 
-            const ipfsMessage = {
-              content: joinContent,
-              sender: publicKey.toString(),
-              timestamp: Date.now(),
-              channelId: channelPubkey.toString(),
-            };
-            const ipfsCid = await uploadMessage(ipfsMessage);
-            await logMessage(channelPubkey, joinContent, ipfsCid);
-            console.log("[useGames] Game join logged as message");
-          } catch (logErr) {
-            console.error("[useGames] Failed to log game join:", logErr);
-          }
-        }
+        // Get member PDA for message logging
+        const [memberPda] = getMemberPDA(channelPubkey, publicKey);
+
+        // Build logMessage instruction
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const logMessageIx = await (shieldChatProgram.methods as any)
+          .logMessage(messageHash, Buffer.from(ipfsCid))
+          .accounts({
+            channel: channelPubkey,
+            member: memberPda,
+            sender: publicKey,
+          })
+          .instruction();
+
+        // Create combined transaction with both instructions
+        const tx = new Transaction();
+        tx.add(joinGameIx);
+        tx.add(logMessageIx);
+
+        // Get recent blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+        tx.recentBlockhash = blockhash;
+        tx.lastValidBlockHeight = lastValidBlockHeight;
+        tx.feePayer = publicKey;
+
+        // Send via sponsored wallet (single transaction for both operations)
+        const signature = await sendTransaction(tx, connection);
+        console.log("[useGames] Combined join tx signature:", signature);
+
+        // Wait for confirmation
+        await connection.confirmTransaction(signature, "confirmed");
+
+        console.log("[useGames] Joined TTT game + message logged:", gamePda.toString());
 
         // Refresh games
         await fetchGames();
@@ -242,7 +329,7 @@ export function useGames(
         setLoading(false);
       }
     },
-    [anchorWallet, publicKey, getGamesProgram, logMessage, channelPubkey]
+    [anchorWallet, publicKey, sendTransaction, channelPubkey, getGamesProgram, getShieldChatProgram, connection]
   );
 
   // Make a move in Tic Tac Toe
@@ -286,10 +373,10 @@ export function useGames(
     [anchorWallet, publicKey, getGamesProgram]
   );
 
-  // Claim Tic Tac Toe winnings
+  // Claim Tic Tac Toe winnings (combined with message logging in single transaction)
   const claimTicTacToeWinnings = useCallback(
     async (gamePda: PublicKey): Promise<void> => {
-      if (!anchorWallet || !publicKey) {
+      if (!anchorWallet || !publicKey || !sendTransaction || !channelPubkey) {
         throw new Error("Wallet not connected");
       }
 
@@ -297,62 +384,92 @@ export function useGames(
       setError(null);
 
       try {
-        const program = getGamesProgram();
+        const gamesProgram = getGamesProgram();
+        const shieldChatProgram = getShieldChatProgram();
 
+        // Fetch game state first to get game info for the message
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (program.methods as any)
+        const account = await (gamesProgram.account as any).ticTacToeGame.fetch(gamePda);
+        const finalGame = {
+          pubkey: gamePda,
+          account: {
+            ...account,
+            state: parseTicTacToeState(account.state),
+          } as TicTacToeGameAccount,
+        };
+
+        // Build claim winnings instruction
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const claimIx = await (gamesProgram.methods as any)
           .claimTttWinnings()
           .accounts({
             claimer: publicKey,
             game: gamePda,
           })
-          .rpc();
+          .instruction();
 
-        console.log("[useGames] Claimed TTT winnings:", gamePda.toString());
+        // Prepare message content for logging
+        const resultContent = JSON.stringify({
+          type: "game_result",
+          gameId: gamePda.toString(),
+          gameType: "tictactoe",
+          state: getStateString(finalGame.account.state),
+          playerX: finalGame.account.playerX.toString(),
+          playerO: finalGame.account.playerO?.toString(),
+          winner: finalGame.account.winner?.toString(),
+          wager: finalGame.account.wager.toString(),
+          createdAt: new Date(finalGame.account.createdAt.toNumber() * 1000).toISOString(),
+          board: finalGame.account.board,
+        });
 
-        // Log game result as a message in the channel
-        if (logMessage && channelPubkey) {
-          try {
-            // Fetch final game state directly
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const account = await (program.account as any).ticTacToeGame.fetch(gamePda);
-            const finalGame = {
-              pubkey: gamePda,
-              account: {
-                ...account,
-                state: parseTicTacToeState(account.state),
-              } as TicTacToeGameAccount,
-            };
+        // Upload to IPFS
+        const ipfsMessage = {
+          content: resultContent,
+          sender: publicKey.toString(),
+          timestamp: Date.now(),
+          channelId: channelPubkey.toString(),
+        };
+        const ipfsCid = await uploadMessage(ipfsMessage);
 
-            const resultContent = JSON.stringify({
-              type: "game_result",
-              gameId: gamePda.toString(),
-              gameType: "tictactoe",
-              state: getStateString(finalGame.account.state),
-              playerX: finalGame.account.playerX.toString(),
-              playerO: finalGame.account.playerO?.toString(),
-              winner: finalGame.account.winner?.toString(),
-              wager: finalGame.account.wager.toString(),
-              createdAt: new Date(finalGame.account.createdAt.toNumber() * 1000).toISOString(),
-              board: finalGame.account.board,
-            });
+        // Compute message hash (SHA256 of content)
+        const encoder = new TextEncoder();
+        const data = encoder.encode(resultContent);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const messageHash = Array.from(new Uint8Array(hashBuffer));
 
-            // Upload to IPFS
-            const ipfsMessage = {
-              content: resultContent,
-              sender: publicKey.toString(),
-              timestamp: Date.now(),
-              channelId: channelPubkey.toString(),
-            };
-            const ipfsCid = await uploadMessage(ipfsMessage);
+        // Get member PDA for message logging
+        const [memberPda] = getMemberPDA(channelPubkey, publicKey);
 
-            await logMessage(channelPubkey, resultContent, ipfsCid);
-            console.log("[useGames] Game result logged as message");
-          } catch (logErr) {
-            console.error("[useGames] Failed to log game result:", logErr);
-            // Don't throw - winnings were claimed successfully
-          }
-        }
+        // Build logMessage instruction
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const logMessageIx = await (shieldChatProgram.methods as any)
+          .logMessage(messageHash, Buffer.from(ipfsCid))
+          .accounts({
+            channel: channelPubkey,
+            member: memberPda,
+            sender: publicKey,
+          })
+          .instruction();
+
+        // Create combined transaction with both instructions
+        const tx = new Transaction();
+        tx.add(claimIx);
+        tx.add(logMessageIx);
+
+        // Get recent blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+        tx.recentBlockhash = blockhash;
+        tx.lastValidBlockHeight = lastValidBlockHeight;
+        tx.feePayer = publicKey;
+
+        // Send via sponsored wallet (single transaction for both operations)
+        const signature = await sendTransaction(tx, connection);
+        console.log("[useGames] Combined claim tx signature:", signature);
+
+        // Wait for confirmation
+        await connection.confirmTransaction(signature, "confirmed");
+
+        console.log("[useGames] Claimed TTT winnings + result logged:", gamePda.toString());
 
         // Refresh games
         await fetchGames();
@@ -364,7 +481,7 @@ export function useGames(
         setLoading(false);
       }
     },
-    [anchorWallet, publicKey, getGamesProgram, logMessage, channelPubkey]
+    [anchorWallet, publicKey, sendTransaction, channelPubkey, getGamesProgram, getShieldChatProgram, connection]
   );
 
   // Cancel Tic Tac Toe game

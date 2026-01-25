@@ -1,42 +1,31 @@
 "use client";
 
-import { FC, ReactNode, useMemo } from "react";
-import {
-  ConnectionProvider,
-  WalletProvider as SolanaWalletProvider,
-} from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import {
-  PhantomWalletAdapter,
-  SolflareWalletAdapter,
-  TorusWalletAdapter,
-} from "@solana/wallet-adapter-wallets";
-import { RPC_ENDPOINT } from "@/lib/constants";
-
-// Import wallet adapter styles
-import "@solana/wallet-adapter-react-ui/styles.css";
+import { FC, ReactNode } from "react";
+import dynamic from "next/dynamic";
+import { SolanaConnectionProvider } from "@/contexts/SolanaConnectionContext";
 
 interface WalletProviderProps {
   children: ReactNode;
 }
 
-export const WalletProvider: FC<WalletProviderProps> = ({ children }) => {
-  // Initialize wallets
-  const wallets = useMemo(
-    () => [
-      new PhantomWalletAdapter(),
-      new SolflareWalletAdapter(),
-      new TorusWalletAdapter(),
-    ],
-    []
-  );
+// Loading component shown while Privy loads
+const LoadingState = () => (
+  <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+    <div className="animate-pulse text-gray-400">Loading...</div>
+  </div>
+);
 
+// Dynamically import Privy provider (client-side only to avoid hydration errors)
+const PrivyProviderWrapper = dynamic(
+  () => import("./PrivyProviderWrapper"),
+  { ssr: false, loading: LoadingState }
+);
+
+export const WalletProvider: FC<WalletProviderProps> = ({ children }) => {
   return (
-    <ConnectionProvider endpoint={RPC_ENDPOINT}>
-      <SolanaWalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
-      </SolanaWalletProvider>
-    </ConnectionProvider>
+    <PrivyProviderWrapper>
+      <SolanaConnectionProvider>{children}</SolanaConnectionProvider>
+    </PrivyProviderWrapper>
   );
 };
 

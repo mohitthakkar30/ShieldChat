@@ -1,7 +1,7 @@
 "use client";
 
-import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useWallet } from "@/hooks/usePrivyAnchorWallet";
+import { PrivyLoginButton } from "@/components/PrivyLoginButton";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -35,7 +35,7 @@ export default function Home() {
             </div>
 
             {/* CTA */}
-            <WalletMultiButton className="!bg-emerald-600 hover:!bg-emerald-500 !rounded-lg !text-sm !py-2 !px-4 !font-medium hover:!shadow-[0_0_20px_rgba(16,185,129,0.3)] !transition-all" />
+            <PrivyLoginButton className="bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm py-2 px-4 font-medium hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all text-white" />
           </div>
         </div>
       </nav>
@@ -104,7 +104,7 @@ export default function Home() {
                     Launch App
                   </Link>
                 ) : (
-                  <WalletMultiButton className="!bg-emerald-500 hover:!bg-emerald-400 !rounded-lg !py-3 !px-6 !text-base !font-semibold !text-[#030712] hover:!shadow-[0_0_30px_rgba(16,185,129,0.4)] !transition-all" />
+                  <PrivyLoginButton className="bg-emerald-500 hover:bg-emerald-400 rounded-lg py-3 px-6 text-base font-semibold text-[#030712] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-all" />
                 )}
                 <a href="#features" className="btn-outline text-center">
                   Explore Features
@@ -403,7 +403,7 @@ export default function Home() {
                   Launch ShieldChat
                 </Link>
               ) : (
-                <WalletMultiButton className="!bg-emerald-500 hover:!bg-emerald-400 !rounded-lg !py-4 !px-8 !text-lg !font-semibold !text-[#030712] !shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:!shadow-[0_0_40px_rgba(16,185,129,0.5)] !transition-all" />
+                <PrivyLoginButton className="bg-emerald-500 hover:bg-emerald-400 rounded-lg py-4 px-8 text-lg font-semibold text-[#030712] shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] transition-all" />
               )}
 
               <div className="mt-8 flex items-center justify-center gap-2 text-gray-500 text-sm font-mono">

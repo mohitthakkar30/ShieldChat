@@ -47,6 +47,7 @@ export default function ChannelPage() {
     loading,
     error,
     publicKey,
+    connecting,
   } = useShieldChat();
 
   // Parse channel PDA for useMessages hook
@@ -151,11 +152,11 @@ export default function ChannelPage() {
   const [showGamesModal, setShowGamesModal] = useState(false);
   const [selectedGameFromMessage, setSelectedGameFromMessage] = useState<TicTacToeGame | null>(null);
 
-  // Games hook with logMessage for logging game creation/results as messages
+  // Games hook - game actions are combined with message logging in single transactions
   const {
     ticTacToeGames,
     refreshGames,
-  } = useGames(channelPda, logMessage);
+  } = useGames(channelPda);
 
   // Merge revealed polls into messages as poll result cards
   const allMessages = useMemo(() => {
@@ -209,12 +210,12 @@ export default function ChannelPage() {
     markedAsReadRef.current = new Set(); // Clear read tracking for new channel
   }, [channelId]);
 
-  // Load channel data after reset
+  // Load channel data after reset - wait for wallet to be ready
   useEffect(() => {
-    if (channelId) {
+    if (channelId && !connecting) {
       loadChannelData();
     }
-  }, [channelId]);
+  }, [channelId, connecting]);
 
   // Load messages once when channel is ready
   useEffect(() => {
@@ -296,6 +297,8 @@ export default function ChannelPage() {
 
       await loadChannelData();
     } catch (err) {
+      console.log("Error = ", err);
+      
       console.error("Failed to join channel:", err);
       alert(`Failed to join: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
@@ -388,6 +391,15 @@ export default function ChannelPage() {
       setShowGamesModal(true);
     }
   }, [ticTacToeGames, refreshGames]);
+
+  // Show loading while wallet is still connecting (Privy async initialization)
+  if (connecting) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-gray-900">
+        <div className="text-gray-400">Connecting wallet...</div>
+      </div>
+    );
+  }
 
   if (loading && !channel) {
     return (
@@ -822,7 +834,6 @@ export default function ChannelPage() {
           channelPubkey={channelPda}
           initialGame={selectedGameFromMessage}
           onInitialGameHandled={() => setSelectedGameFromMessage(null)}
-          logMessage={logMessage}
         />
       )}
     </div>

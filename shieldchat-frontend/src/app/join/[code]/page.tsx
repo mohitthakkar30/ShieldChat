@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useWallet } from "@/hooks/usePrivyAnchorWallet";
+import { useConnection } from "@/contexts/SolanaConnectionContext";
+import { PrivyLoginButton } from "@/components/PrivyLoginButton";
 import { PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddress, getAccount } from "@solana/spl-token";
 import { useInvites } from "@/hooks/useInvites";
@@ -367,7 +368,7 @@ export default function JoinPage() {
                 {!connected ? (
                   <div className="flex flex-col items-center gap-3">
                     <p className="text-gray-400 text-sm">Connect your wallet to join</p>
-                    <WalletMultiButton className="!bg-gradient-to-r !from-purple-600 !to-pink-600 hover:!from-purple-700 hover:!to-pink-700 !rounded-lg !h-12 !px-6" />
+                    <PrivyLoginButton className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg h-12 px-6 text-white" />
                   </div>
                 ) : (
                   <button

@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useMemo } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { Transaction, VersionedTransaction, Connection } from "@solana/web3.js";
 import {
   SUPPORTED_TOKENS,

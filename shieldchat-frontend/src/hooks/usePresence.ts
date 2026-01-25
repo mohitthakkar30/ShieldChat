@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { PublicKey } from "@solana/web3.js";
 import {
   UserPresence,

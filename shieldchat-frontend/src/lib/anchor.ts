@@ -1,8 +1,19 @@
 import { Program, AnchorProvider, Idl } from "@coral-xyz/anchor";
-import { Connection, PublicKey } from "@solana/web3.js";
-import { AnchorWallet } from "@solana/wallet-adapter-react";
+import { Connection, PublicKey, Transaction, VersionedTransaction, SendOptions, ConfirmOptions, Signer } from "@solana/web3.js";
 import idl from "@/idl/shield_chat.json";
-import { PROGRAM_ID, RPC_ENDPOINT } from "./constants";
+import { RPC_ENDPOINT } from "./constants";
+
+// AnchorWallet interface - matches what Anchor expects
+export interface AnchorWallet {
+  publicKey: PublicKey;
+  signTransaction<T extends Transaction | VersionedTransaction>(tx: T): Promise<T>;
+  signAllTransactions<T extends Transaction | VersionedTransaction>(txs: T[]): Promise<T[]>;
+}
+
+// Extended wallet interface with sendTransaction for gas sponsorship
+export interface SponsoredWallet extends AnchorWallet {
+  sendTransaction: (tx: Transaction | VersionedTransaction, connection: Connection, options?: SendOptions) => Promise<string>;
+}
 
 // Type for the ShieldChat program
 export type ShieldChatProgram = Program<ShieldChatIDL>;
@@ -23,7 +34,58 @@ export function getConnection(): Connection {
   return new Connection(RPC_ENDPOINT, "confirmed");
 }
 
-// Get Anchor provider
+// Custom AnchorProvider that uses Privy's gas-sponsored sendTransaction
+class SponsoredAnchorProvider extends AnchorProvider {
+  private sponsoredWallet: SponsoredWallet;
+
+  constructor(connection: Connection, wallet: SponsoredWallet, opts: ConfirmOptions) {
+    super(connection, wallet, opts);
+    this.sponsoredWallet = wallet;
+  }
+
+  // Override sendAndConfirm to use Privy's sponsored sendTransaction
+  async sendAndConfirm(
+    tx: Transaction | VersionedTransaction,
+    signers?: Signer[],
+    opts?: ConfirmOptions
+  ): Promise<string> {
+    // For legacy transactions, ensure blockhash and feePayer are set
+    if (tx instanceof Transaction) {
+      // Get recent blockhash if not set
+      if (!tx.recentBlockhash) {
+        const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash(
+          opts?.preflightCommitment || this.opts.preflightCommitment || "confirmed"
+        );
+        tx.recentBlockhash = blockhash;
+        tx.lastValidBlockHeight = lastValidBlockHeight;
+      }
+
+      // Set fee payer if not set
+      if (!tx.feePayer) {
+        tx.feePayer = this.sponsoredWallet.publicKey;
+      }
+
+      // Sign with any additional signers first
+      if (signers && signers.length > 0) {
+        tx.partialSign(...signers);
+      }
+    }
+
+    // Use the sponsored wallet's sendTransaction (which uses Privy with sponsor: true)
+    const signature = await this.sponsoredWallet.sendTransaction(tx, this.connection, {
+      skipPreflight: opts?.skipPreflight,
+      preflightCommitment: opts?.preflightCommitment,
+    });
+
+    // Wait for confirmation
+    const commitment = opts?.commitment || this.opts.commitment || "confirmed";
+    await this.connection.confirmTransaction(signature, commitment);
+
+    return signature;
+  }
+}
+
+// Get Anchor provider (standard - for backwards compatibility)
 export function getProvider(wallet: AnchorWallet): AnchorProvider {
   const connection = getConnection();
   return new AnchorProvider(connection, wallet, {
@@ -31,9 +93,30 @@ export function getProvider(wallet: AnchorWallet): AnchorProvider {
   });
 }
 
-// Get ShieldChat program
-export function getProgram(wallet: AnchorWallet): ShieldChatProgram {
-  const provider = getProvider(wallet);
+// Get gas-sponsored Anchor provider
+export function getSponsoredProvider(wallet: SponsoredWallet): AnchorProvider {
+  const connection = getConnection();
+  return new SponsoredAnchorProvider(connection, wallet, {
+    commitment: "confirmed",
+  });
+}
+
+// Get ShieldChat program with gas sponsorship
+export function getProgram(wallet: AnchorWallet | SponsoredWallet): ShieldChatProgram {
+  const connection = getConnection();
+
+  // Check if wallet has sendTransaction (SponsoredWallet)
+  if ('sendTransaction' in wallet && typeof wallet.sendTransaction === 'function') {
+    const provider = new SponsoredAnchorProvider(connection, wallet as SponsoredWallet, {
+      commitment: "confirmed",
+    });
+    return new Program(idl as ShieldChatIDL, provider);
+  }
+
+  // Fall back to standard provider
+  const provider = new AnchorProvider(connection, wallet, {
+    commitment: "confirmed",
+  });
   return new Program(idl as ShieldChatIDL, provider);
 }
 

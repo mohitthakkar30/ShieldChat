@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect, useRef } from "react";
-import { useAnchorWallet, useWallet } from "@solana/wallet-adapter-react";
+import { useAnchorWallet, useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { PublicKey, SystemProgram, Connection } from "@solana/web3.js";
 import * as anchor from "@coral-xyz/anchor";
 

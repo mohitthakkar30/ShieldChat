@@ -35,6 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
+        suppressHydrationWarning
         className={`${inter.variable} ${spaceMono.variable} ${outfit.variable} font-sans antialiased bg-[#030712] text-gray-50`}
       >
         <WalletProvider>{children}</WalletProvider>

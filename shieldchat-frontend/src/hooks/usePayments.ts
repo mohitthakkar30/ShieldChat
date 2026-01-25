@@ -7,7 +7,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import {
   createPrivatePayment,
   PaymentAttachment,

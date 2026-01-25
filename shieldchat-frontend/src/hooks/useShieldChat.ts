@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useAnchorWallet } from "@solana/wallet-adapter-react";
+import { useCallback, useState, useMemo } from "react";
+import { usePrivyAnchorWallet } from "@/hooks/usePrivyAnchorWallet";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import * as anchor from "@coral-xyz/anchor";
@@ -26,11 +26,20 @@ export interface Member {
 }
 
 export function useShieldChat() {
-  const anchorWallet = useAnchorWallet();
+  const { wallet, publicKey: walletPublicKey, sendTransaction } = usePrivyAnchorWallet();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const publicKey = anchorWallet?.publicKey || null;
+  const publicKey = walletPublicKey;
+
+  // Create a sponsored wallet object that includes sendTransaction for gas sponsorship
+  const anchorWallet = useMemo(() => {
+    if (!wallet || !sendTransaction) return undefined;
+    return {
+      ...wallet,
+      sendTransaction,
+    };
+  }, [wallet, sendTransaction]);
 
   // Create a new channel (single atomic transaction with create + join)
   const createChannel = useCallback(
@@ -674,6 +683,7 @@ export function useShieldChat() {
     loading,
     error,
     connected: !!publicKey,
+    connecting: !anchorWallet, // Wallet is still initializing
     publicKey,
 
     // Actions
