@@ -665,10 +665,24 @@ export function useShieldChat() {
         const [memberPda] = getMemberPDA(channelPda, publicKey);
 
         const account = await (program.account as Record<string, unknown> & { member: { fetch: (key: PublicKey) => Promise<unknown> } }).member.fetch(memberPda);
+        const memberAccount = account as MemberAccount;
+
+        // CRITICAL: Verify the fetched account's wallet matches the current user's wallet
+        // This prevents false positives where a different user's membership is incorrectly returned
+        // (can happen due to RPC caching or timing issues)
+        if (!memberAccount.wallet.equals(publicKey)) {
+          console.warn(
+            "[checkMembership] Wallet mismatch! Expected:",
+            publicKey.toString(),
+            "Got:",
+            memberAccount.wallet.toString()
+          );
+          return null;
+        }
 
         return {
           publicKey: memberPda,
-          account: account as MemberAccount,
+          account: memberAccount,
         };
       } catch {
         // Member doesn't exist

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { useConnection } from "@/contexts/SolanaConnectionContext";
@@ -20,7 +20,10 @@ export default function JoinPage() {
   const { publicKey, connected } = useWallet();
   const { connection } = useConnection();
   const { getInvite, useInviteCode, loading: inviteLoading, error: inviteError } = useInvites();
-  const { joinChannel, fetchChannel, checkMembership, loading: shieldChatLoading } = useShieldChat();
+  const { joinChannel, fetchChannel, checkMembership } = useShieldChat();
+
+  // Track if we've already fetched the invite to prevent re-fetching
+  const hasFetchedInvite = useRef(false);
 
   const [invite, setInvite] = useState<DbInvite | null>(null);
   const [channelInfo, setChannelInfo] = useState<{
@@ -38,11 +41,15 @@ export default function JoinPage() {
   const [userTokenAccount, setUserTokenAccount] = useState<PublicKey | null>(null);
   const [checkingTokenBalance, setCheckingTokenBalance] = useState(false);
 
-  // Fetch invite details
+  // Fetch invite details - only run once per code
   useEffect(() => {
     if (!code) return;
 
-    const fetchInvite = async () => {
+    // Prevent re-fetching when hook functions change reference
+    if (hasFetchedInvite.current) return;
+    hasFetchedInvite.current = true;
+
+    const fetchInviteData = async () => {
       setStatus("loading");
       const inviteData = await getInvite(code);
 
@@ -54,7 +61,7 @@ export default function JoinPage() {
 
       setInvite(inviteData);
 
-      // Fetch channel info
+      // Fetch channel info (this can fail if wallet not connected, that's OK)
       try {
         const channelPda = new PublicKey(inviteData.channel_pda);
         const channel = await fetchChannel(channelPda);
@@ -80,8 +87,13 @@ export default function JoinPage() {
       setStatus("valid");
     };
 
-    fetchInvite();
+    fetchInviteData();
   }, [code, getInvite, fetchChannel]);
+
+  // Reset the fetch flag when code changes
+  useEffect(() => {
+    hasFetchedInvite.current = false;
+  }, [code]);
 
   // Check token balance for token-gated channels
   useEffect(() => {
@@ -132,13 +144,32 @@ export default function JoinPage() {
     const checkExistingMembership = async () => {
       try {
         const channelPda = new PublicKey(invite.channel_pda);
+
+        // Debug logging to diagnose "Already a Member" issues
+        console.log("[Join Page] Checking membership for:");
+        console.log("  - Channel PDA:", invite.channel_pda);
+        console.log("  - User Wallet:", publicKey.toString());
+
         const membership = await checkMembership(channelPda);
 
         if (membership) {
-          setStatus("already_member");
+          console.log("[Join Page] Found existing membership:");
+          console.log("  - Member PDA:", membership.publicKey.toString());
+          console.log("  - isActive:", membership.account.isActive);
+          console.log("  - joinedAt:", new Date(Number(membership.account.joinedAt) * 1000).toISOString());
+          console.log("  - Wallet on-chain:", membership.account.wallet.toString());
+
+          // Only mark as already_member if the membership exists AND is active
+          // (user might have left the channel, which makes isActive = false)
+          if (membership.account.isActive) {
+            setStatus("already_member");
+          }
+        } else {
+          console.log("[Join Page] No membership found - user is new");
         }
-      } catch {
-        // Not a member, which is expected
+      } catch (err) {
+        // Not a member, which is expected for new users
+        console.log("[Join Page] Error checking membership (expected for new users):", err);
       }
     };
 
@@ -192,7 +223,9 @@ export default function JoinPage() {
     }
   }, [invite, router]);
 
-  const isLoading = inviteLoading || shieldChatLoading || status === "loading";
+  // Only check inviteLoading and status - shieldChatLoading causes infinite loop
+  // because fetchChannel changes reference when anchorWallet initializes
+  const isLoading = inviteLoading || status === "loading";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black flex items-center justify-center p-4">
@@ -250,6 +283,12 @@ export default function JoinPage() {
               <p className="text-gray-400 mt-2">
                 You&apos;re already a member of this channel.
               </p>
+              {/* Show wallet address to help diagnose membership issues */}
+              {publicKey && (
+                <p className="text-gray-500 text-xs mt-2 font-mono">
+                  Wallet: {publicKey.toString().slice(0, 8)}...{publicKey.toString().slice(-8)}
+                </p>
+              )}
               <button
                 onClick={handleGoToChannel}
                 className="mt-6 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg font-semibold transition-all"
