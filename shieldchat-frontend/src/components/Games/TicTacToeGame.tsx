@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { useGames, TicTacToeGame as TicTacToeGameType } from "@/hooks/useGames";
+import { useHeliusGames } from "@/hooks/useHeliusGames";
 import {
   TicTacToeState,
   lamportsToSol,
@@ -29,7 +30,6 @@ export default function TicTacToeGameComponent({
     makeTicTacToeMove,
     claimTicTacToeWinnings,
     cancelTicTacToeGame,
-    subscribeToGame,
     fetchSingleTTTGame,
   } = useGames(channelPubkey);
 
@@ -40,16 +40,32 @@ export default function TicTacToeGameComponent({
   const isPlayerX = publicKey?.equals(game.account.playerX);
   const isPlayerO = game.account.playerO && publicKey?.equals(game.account.playerO);
 
-  // Subscribe to game updates (WebSocket)
-  useEffect(() => {
-    const unsubscribe = subscribeToGame(initialGame.pubkey, "tictactoe", (updatedGame) => {
-      setGame(updatedGame as TicTacToeGameType);
-    });
-    return () => unsubscribe();
-  }, [initialGame.pubkey, subscribeToGame]);
+  const isGameOver =
+    game.account.state === TicTacToeState.XWins ||
+    game.account.state === TicTacToeState.OWins ||
+    game.account.state === TicTacToeState.Draw ||
+    game.account.state === TicTacToeState.Cancelled;
 
-  // Poll for updates when waiting for opponent or it's their turn
+  // Callback to refresh game state
+  const refreshGameState = useCallback(async () => {
+    const updated = await fetchSingleTTTGame(game.pubkey);
+    if (updated) {
+      setGame(updated);
+    }
+  }, [fetchSingleTTTGame, game.pubkey]);
+
+  // Use Helius WebSocket for real-time game updates
+  const { connected: heliusConnected } = useHeliusGames({
+    gamePda: game.pubkey,
+    onGameUpdate: refreshGameState,
+    enabled: !isGameOver,
+  });
+
+  // Fallback polling when Helius is not connected
   useEffect(() => {
+    // Don't poll if Helius is connected or game is over
+    if (heliusConnected || isGameOver) return;
+
     const shouldPoll =
       game.account.state === TicTacToeState.WaitingForPlayer ||
       (game.account.state === TicTacToeState.PlayerXTurn && !isPlayerX) ||
@@ -57,29 +73,17 @@ export default function TicTacToeGameComponent({
 
     if (!shouldPoll) return;
 
-    const poll = async () => {
-      const updated = await fetchSingleTTTGame(game.pubkey);
-      if (updated) {
-        setGame(updated);
-      }
-    };
-
-    // Poll every 3 seconds
-    const interval = setInterval(poll, 3000);
+    // Poll every 3 seconds as fallback
+    const interval = setInterval(refreshGameState, 3000);
     return () => clearInterval(interval);
-  }, [game.account.state, game.pubkey, isPlayerX, isPlayerO, fetchSingleTTTGame]);
+  }, [game.account.state, isPlayerX, isPlayerO, heliusConnected, isGameOver, refreshGameState]);
+
   const isParticipant = isPlayerX || isPlayerO;
   const isWinner = game.account.winner && publicKey?.equals(game.account.winner);
 
   const isYourTurn =
     (game.account.state === TicTacToeState.PlayerXTurn && isPlayerX) ||
     (game.account.state === TicTacToeState.PlayerOTurn && isPlayerO);
-
-  const isGameOver =
-    game.account.state === TicTacToeState.XWins ||
-    game.account.state === TicTacToeState.OWins ||
-    game.account.state === TicTacToeState.Draw ||
-    game.account.state === TicTacToeState.Cancelled;
 
   const winningPattern = getWinningPattern(game.account.board);
 
@@ -101,6 +105,11 @@ export default function TicTacToeGameComponent({
     setSelectedCell(position);
     try {
       await makeTicTacToeMove(game.pubkey, position);
+      // Immediately fetch updated game state after move
+      const updated = await fetchSingleTTTGame(game.pubkey);
+      if (updated) {
+        setGame(updated);
+      }
     } catch (error) {
       console.error("Failed to make move:", error);
     } finally {

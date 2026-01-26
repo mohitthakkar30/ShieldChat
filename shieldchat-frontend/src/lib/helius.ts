@@ -6,11 +6,12 @@
  * in real-time, enabling instant message delivery without polling.
  */
 
-import { PROGRAM_ID } from "./constants";
+import { PROGRAM_ID, ARCIUM_MXE_PROGRAM_ID } from "./constants";
 
 export interface HeliusConfig {
   apiKey: string;
   network: "devnet" | "mainnet";
+  programId?: string; // Optional custom program ID to monitor
 }
 
 export interface HeliusMessage {
@@ -31,6 +32,7 @@ export class HeliusWebSocket {
   private ws: WebSocket | null = null;
   private apiKey: string;
   private network: string;
+  private programId: string;
   private subscriptionId: number | null = null;
   private messageCallbacks: Set<MessageCallback> = new Set();
   private reconnectAttempts = 0;
@@ -41,6 +43,7 @@ export class HeliusWebSocket {
   constructor(config: HeliusConfig) {
     this.apiKey = config.apiKey;
     this.network = config.network;
+    this.programId = config.programId || PROGRAM_ID.toString();
   }
 
   /**
@@ -105,7 +108,7 @@ export class HeliusWebSocket {
   }
 
   /**
-   * Subscribe to ShieldChat program transactions
+   * Subscribe to program transactions
    */
   private subscribe(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
@@ -117,7 +120,7 @@ export class HeliusWebSocket {
       params: [
         {
           // Monitor all transactions involving our program
-          accountInclude: [PROGRAM_ID.toString()],
+          accountInclude: [this.programId],
         },
         {
           commitment: "confirmed",
@@ -130,7 +133,7 @@ export class HeliusWebSocket {
     };
 
     this.ws.send(JSON.stringify(subscriptionRequest));
-    console.log("[Helius] Subscribed to program:", PROGRAM_ID.toString());
+    console.log("[Helius] Subscribed to program:", this.programId);
   }
 
   /**
@@ -235,20 +238,18 @@ export class HeliusWebSocket {
   ): Uint8Array | null {
     if (!txMessage?.instructions || !txMessage?.accountKeys) return null;
 
-    const programIdStr = PROGRAM_ID.toString();
-
     for (const ix of txMessage.instructions) {
       // Check if this instruction is for our program
       let isProgramIx = false;
 
-      if (ix.programId === programIdStr) {
+      if (ix.programId === this.programId) {
         isProgramIx = true;
       } else if (ix.programIdIndex !== undefined) {
         const accountKey = txMessage.accountKeys[ix.programIdIndex];
         const programId = typeof accountKey === "string"
           ? accountKey
           : accountKey?.pubkey;
-        isProgramIx = programId === programIdStr;
+        isProgramIx = programId === this.programId;
       }
 
       if (isProgramIx && ix.data) {
@@ -435,5 +436,44 @@ export function resetHeliusClient(): void {
   if (heliusInstance) {
     heliusInstance.disconnect();
     heliusInstance = null;
+  }
+}
+
+// Singleton instance for games (ARCIUM_MXE_PROGRAM_ID)
+let heliusGamesInstance: HeliusWebSocket | null = null;
+
+/**
+ * Get or create Helius WebSocket client for games
+ * Monitors ARCIUM_MXE_PROGRAM_ID for game transactions
+ * Returns null if no API key is configured
+ */
+export function getHeliusGamesClient(): HeliusWebSocket | null {
+  if (heliusGamesInstance) {
+    return heliusGamesInstance;
+  }
+
+  const apiKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY;
+
+  if (!apiKey) {
+    console.warn("[Helius Games] No API key configured");
+    return null;
+  }
+
+  heliusGamesInstance = new HeliusWebSocket({
+    apiKey,
+    network: "devnet",
+    programId: ARCIUM_MXE_PROGRAM_ID.toString(),
+  });
+
+  return heliusGamesInstance;
+}
+
+/**
+ * Reset the games singleton instance (for testing)
+ */
+export function resetHeliusGamesClient(): void {
+  if (heliusGamesInstance) {
+    heliusGamesInstance.disconnect();
+    heliusGamesInstance = null;
   }
 }

@@ -646,7 +646,7 @@ export function useGames(channelPubkey: PublicKey | null) {
     ): (() => void) => {
       if (!anchorWallet) return () => {};
 
-      const connection = new Connection(RPC_ENDPOINT, "confirmed");
+      // Use the shared connection instead of creating a new one
       const subscriptionId = connection.onAccountChange(
         gamePda,
         async () => {
@@ -673,7 +673,7 @@ export function useGames(channelPubkey: PublicKey | null) {
         connection.removeAccountChangeListener(subscriptionId);
       };
     },
-    [anchorWallet, getGamesProgram]
+    [anchorWallet, connection, getGamesProgram]
   );
 
   // Alias for refreshGames
