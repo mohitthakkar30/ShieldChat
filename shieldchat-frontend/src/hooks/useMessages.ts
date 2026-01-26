@@ -809,7 +809,9 @@ export function useMessages(channelPda: PublicKey | null) {
         }
 
         let content = ipfsMessage.content;
-        const senderAddress = sender || "Unknown";
+        // Prefer sender from IPFS message (set at upload time) over Helius-parsed sender
+        // This ensures consistency with how the message was originally sent
+        const senderAddress = ipfsMessage.sender || sender || "Unknown";
         const messageTimestamp = new Date(timestamp * 1000).toISOString();
 
         // Decrypt if encrypted

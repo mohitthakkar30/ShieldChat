@@ -7,6 +7,44 @@
  */
 
 import { PROGRAM_ID, ARCIUM_MXE_PROGRAM_ID } from "./constants";
+import { PublicKey } from "@solana/web3.js";
+
+// MessageLogged event discriminator from IDL (same as in useMessages.ts)
+const MESSAGE_LOGGED_DISCRIMINATOR = [24, 236, 247, 207, 227, 70, 101, 210];
+
+/**
+ * Parse sender from MessageLogged event in transaction logs
+ * Anchor events are emitted as base64-encoded data in "Program data:" logs
+ */
+function parseSenderFromLogs(logs: string[]): string | null {
+  try {
+    for (const log of logs) {
+      if (!log.startsWith("Program data: ")) continue;
+
+      const base64Data = log.slice("Program data: ".length);
+      const data = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+      // Check if this matches MessageLogged event discriminator
+      const discriminator = Array.from(data.slice(0, 8));
+      const matches = discriminator.every((b, i) => b === MESSAGE_LOGGED_DISCRIMINATOR[i]);
+
+      if (!matches) continue;
+
+      // Parse sender from event data:
+      // - 8 bytes: discriminator
+      // - 32 bytes: channel (pubkey)
+      // - 32 bytes: sender (pubkey) <-- This is what we need
+      if (data.length < 72) continue; // Need at least 8 + 32 + 32 bytes
+
+      const senderBytes = data.slice(40, 72); // offset 8 + 32 = 40
+      const sender = new PublicKey(senderBytes);
+      return sender.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export interface HeliusConfig {
   apiKey: string;
@@ -174,16 +212,21 @@ export class HeliusWebSocket {
         // Extract instruction data for our program
         const instructionData = this.extractInstructionData(txMessage);
         const accounts = this.extractAccounts(txMessage);
+        const logs = meta?.logMessages || [];
+
+        // Parse sender from MessageLogged event in logs (most reliable)
+        // Falls back to first account if event parsing fails
+        const senderFromEvent = parseSenderFromLogs(logs);
 
         // Build HeliusMessage from the notification
         const heliusMessage: HeliusMessage = {
           signature: result.signature,
           slot: result.slot,
           timestamp: Math.floor(Date.now() / 1000),
-          logs: meta?.logMessages || [],
+          logs,
           accounts,
           instructionData,
-          sender: accounts[0] || null, // First account is typically the signer
+          sender: senderFromEvent || accounts[0] || null,
         };
 
         console.log(
