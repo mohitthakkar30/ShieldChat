@@ -465,10 +465,11 @@ ShadowWire uses Bulletproof zero-knowledge proofs:
 - Key derivation functions
 - Encrypt and decrypt operations
 
-**magicblock.ts**
-- WebSocket presence client
-- Presence subscription management
-- Connection handling with reconnection logic
+**presence.ts**
+- WebSocket presence client for custom Node.js presence server
+- Typing indicators, online status, read receipts
+- Presence subscription management per channel
+- Connection handling with automatic reconnection
 
 **shadowwire.ts**
 - ShadowWire payment client
