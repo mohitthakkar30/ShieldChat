@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useStore } from "@/stores";
 import { useWallet } from "@/hooks/usePrivyAnchorWallet";
@@ -17,8 +17,14 @@ export function AppShell({ children }: AppShellProps) {
   const { connected, publicKey } = useWallet();
   const sidebarOpen = useStore((state) => state.ui.sidebarOpen);
   const setSidebarOpen = useStore((state) => state.setSidebarOpen);
+  const setUser = useStore((state) => state.setUser);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Sync wallet state to store so all components can access it
+  useEffect(() => {
+    setUser(publicKey, connected);
+  }, [publicKey, connected, setUser]);
 
   // Format wallet address
   const formatWallet = (key: typeof publicKey) => {
