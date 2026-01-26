@@ -40,11 +40,12 @@ export function FloatingAvatar({
   };
 
   // Generate a consistent gradient based on address
+  // Returns either a Tailwind class or 'theme' to use CSS variable
   const getGradient = () => {
-    if (!address) return "from-violet-500 to-purple-600";
+    if (!address) return "theme"; // Use theme primary color
 
     const gradients = [
-      "from-violet-500 to-purple-600",
+      "theme", // Use theme primary color
       "from-cyan-500 to-blue-600",
       "from-emerald-500 to-teal-600",
       "from-amber-500 to-orange-600",
@@ -87,7 +88,11 @@ export function FloatingAvatar({
           flex items-center justify-center
           font-semibold text-white
           shadow-[0_4px_15px_rgba(0,0,0,0.3)]
-          ${gradient ? `bg-gradient-to-br ${getGradient()}` : "bg-gray-700"}
+          ${gradient
+            ? getGradient() === "theme"
+              ? "bg-[linear-gradient(to_bottom_right,var(--accent-gradient-from),var(--accent-gradient-to))]"
+              : `bg-gradient-to-br ${getGradient()}`
+            : "bg-gray-700"}
           ring-2 ring-white/[0.1]
           transition-transform duration-200
           hover:scale-105

@@ -32,15 +32,15 @@ export function AppShell({ children }: AppShellProps) {
       <div className="min-h-screen flex items-center justify-center particle-bg">
         {/* Background gradient orbs */}
         <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute top-1/3 left-1/3 w-[500px] h-[500px] bg-violet-500/10 rounded-full blur-[120px]" />
-          <div className="absolute bottom-1/3 right-1/3 w-[400px] h-[400px] bg-cyan-500/10 rounded-full blur-[100px]" />
+          <div className="absolute top-1/3 left-1/3 w-[500px] h-[500px] bg-[color:var(--accent-primary)]/10 rounded-full blur-[120px]" />
+          <div className="absolute bottom-1/3 right-1/3 w-[400px] h-[400px] bg-[color:var(--accent-secondary)]/10 rounded-full blur-[100px]" />
         </div>
 
         <div className="relative text-center max-w-md px-6 animate-float-up">
           {/* Logo */}
           <div className="relative w-20 h-20 mx-auto mb-6">
-            <div className="absolute inset-0 bg-violet-500/20 rounded-2xl blur-lg" />
-            <div className="relative w-20 h-20 bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl">
+            <div className="absolute inset-0 bg-[color:var(--accent-primary)]/20 rounded-2xl blur-lg" />
+            <div className="relative w-20 h-20 bg-[linear-gradient(to_bottom_right,var(--accent-gradient-from),var(--accent-gradient-to))] rounded-2xl flex items-center justify-center shadow-2xl">
               <svg
                 className="w-10 h-10 text-white"
                 viewBox="0 0 24 24"
@@ -58,13 +58,13 @@ export function AppShell({ children }: AppShellProps) {
           </div>
 
           <h1 className="text-3xl font-bold mb-3 font-display">
-            Welcome to <span className="text-gradient-violet">ShieldChat</span>
+            Welcome to <span className="text-gradient-accent">ShieldChat</span>
           </h1>
           <p className="text-gray-400 mb-8 leading-relaxed">
             Connect your Solana wallet to access private, encrypted messaging.
           </p>
 
-          <PrivyLoginButton className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 rounded-xl py-3 px-8 font-semibold shadow-lg glow-violet-hover text-white transition-all" />
+          <PrivyLoginButton className="w-full bg-[linear-gradient(to_right,var(--accent-gradient-from),var(--accent-gradient-to))] hover:brightness-110 rounded-xl py-3 px-8 font-semibold shadow-lg glow-accent-hover text-white transition-all" />
 
           {/* Trust badges */}
           <div className="mt-8 flex items-center justify-center gap-6 text-gray-500 text-xs">
@@ -86,7 +86,7 @@ export function AppShell({ children }: AppShellProps) {
             </div>
             <div className="flex items-center gap-1.5">
               <svg
-                className="w-3.5 h-3.5 text-violet-400"
+                className="w-3.5 h-3.5 [color:var(--accent-primary)]"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -127,7 +127,7 @@ export function AppShell({ children }: AppShellProps) {
       {/* Mobile Header */}
       <header className="md:hidden fixed top-0 left-0 right-0 z-40 glass border-b border-white/[0.06] px-4 py-3 flex items-center justify-between">
         <Link href="/" className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg">
+          <div className="w-8 h-8 bg-[linear-gradient(to_bottom_right,var(--accent-gradient-from),var(--accent-gradient-to))] rounded-lg flex items-center justify-center shadow-lg">
             <svg
               className="w-4 h-4 text-white"
               viewBox="0 0 24 24"
@@ -216,7 +216,7 @@ export function AppShell({ children }: AppShellProps) {
       <footer className="md:hidden fixed bottom-0 left-0 right-0 z-40 glass border-t border-white/[0.06] px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="relative shrink-0">
-            <div className="w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-lg">
+            <div className="w-10 h-10 bg-[linear-gradient(to_bottom_right,var(--accent-gradient-from),var(--accent-gradient-to))] rounded-full flex items-center justify-center text-sm font-bold text-white shadow-lg">
               {publicKey?.toString()[0] || "?"}
             </div>
             <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-[#12121a] rounded-full" />

@@ -39,13 +39,12 @@ export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
       `,
       glow: `
         bg-white/[0.03]
-        border-violet-500/30
-        shadow-[0_0_40px_rgba(139,92,246,0.15),0_4px_30px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)]
+        border-[color:var(--border-accent)]
+        shadow-[0_0_40px_var(--accent-primary-glow),0_4px_30px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)]
       `,
       accent: `
-        bg-gradient-to-br from-violet-500/10 to-purple-600/10
-        border-violet-500/20
-        shadow-[0_4px_30px_rgba(139,92,246,0.1),inset_0_1px_0_rgba(255,255,255,0.08)]
+        glass-accent
+        shadow-[0_4px_30px_var(--accent-primary-glow),inset_0_1px_0_rgba(255,255,255,0.08)]
       `,
     };
 

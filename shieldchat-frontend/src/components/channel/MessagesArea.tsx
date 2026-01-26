@@ -74,8 +74,8 @@ export function MessagesArea({
         <div className="text-center max-w-md animate-float-up">
           {/* Icon */}
           <div className="relative w-20 h-20 mx-auto mb-6">
-            <div className="absolute inset-0 bg-violet-500/20 rounded-2xl blur-lg" />
-            <div className="relative w-20 h-20 bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/30 rounded-2xl flex items-center justify-center">
+            <div className="absolute inset-0 bg-[color:var(--accent-primary)]/20 rounded-2xl blur-lg" />
+            <div className="relative w-20 h-20 glass-accent rounded-2xl flex items-center justify-center">
               <span className="text-4xl">
                 {channel?.account.requiredTokenMint ? "🎫" : "🔒"}
               </span>
@@ -159,8 +159,8 @@ export function MessagesArea({
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center animate-float-up">
           <div className="relative w-20 h-20 mx-auto mb-6">
-            <div className="absolute inset-0 bg-cyan-500/20 rounded-2xl blur-lg" />
-            <div className="relative w-20 h-20 bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 rounded-2xl flex items-center justify-center">
+            <div className="absolute inset-0 bg-[color:var(--accent-secondary)]/20 rounded-2xl blur-lg" />
+            <div className="relative w-20 h-20 bg-[linear-gradient(to_bottom_right,color-mix(in_srgb,var(--accent-secondary)_20%,transparent),color-mix(in_srgb,var(--accent-primary)_20%,transparent))] border border-[color:var(--accent-secondary)]/30 rounded-2xl flex items-center justify-center">
               <span className="text-4xl">💬</span>
             </div>
           </div>

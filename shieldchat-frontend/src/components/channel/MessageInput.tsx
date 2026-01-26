@@ -76,12 +76,12 @@ export function MessageInput({
 
       {/* Pending Payment Preview */}
       {pendingPayment && (
-        <div className="mb-3 glass-card bg-gradient-to-r from-violet-500/10 to-purple-500/10 border-violet-500/30 p-3 flex items-center justify-between">
+        <div className="mb-3 glass-card glass-accent p-3 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <span className="text-violet-400 text-lg">💰</span>
+            <span className="[color:var(--accent-primary)] text-lg">💰</span>
             <span className="text-sm text-gray-200">
               Sending <span className="font-semibold text-white">{formatAmount(pendingPayment.amount, pendingPayment.token)} {pendingPayment.token}</span>{" "}
-              to <span className="font-mono text-violet-300">{pendingPayment.recipient.slice(0, 8)}...</span>
+              to <span className="font-mono [color:var(--accent-hover)]">{pendingPayment.recipient.slice(0, 8)}...</span>
             </span>
             <span className="text-xs text-gray-500 bg-white/[0.05] px-2 py-0.5 rounded-full">
               {pendingPayment.type}

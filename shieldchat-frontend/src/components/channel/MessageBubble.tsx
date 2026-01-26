@@ -72,7 +72,7 @@ export function MessageBubble({
         {message.content && (
           <div className={`mt-1 px-4 py-3 rounded-2xl backdrop-blur-sm transition-all duration-300 ${
             isOwnMessage
-              ? 'bg-gradient-to-br from-violet-500/30 to-purple-600/30 border border-violet-500/30 text-white rounded-br-md shadow-[0_0_20px_rgba(139,92,246,0.15)]'
+              ? 'message-bubble-own text-white rounded-br-md shadow-[0_0_20px_var(--accent-primary-glow)]'
               : 'bg-white/[0.05] border border-white/[0.08] text-gray-200 rounded-bl-md'
           }`}>
             <p className="break-words leading-relaxed">{message.content}</p>
@@ -141,7 +141,7 @@ function PaymentCard({ payment }: PaymentCardProps) {
           href={getSolscanUrl(payment.txSignature)}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-3 inline-flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+          className="mt-3 inline-flex items-center gap-1 text-xs [color:var(--accent-primary)] hover:[color:var(--accent-hover)] transition-colors"
         >
           View Transaction
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -186,7 +186,7 @@ function PollResultCard({ pollResult }: PollResultCardProps) {
               <div
                 className={`absolute inset-0 transition-all duration-500 ${
                   isWinner
-                    ? 'bg-gradient-to-r from-violet-500/40 to-purple-500/40'
+                    ? 'bg-[linear-gradient(to_right,color-mix(in_srgb,var(--accent-primary)_40%,transparent),color-mix(in_srgb,var(--accent-gradient-to)_40%,transparent))]'
                     : 'bg-white/[0.05]'
                 }`}
                 style={{ width: `${percentage}%` }}
@@ -196,7 +196,7 @@ function PollResultCard({ pollResult }: PollResultCardProps) {
                   {isWinner && <span className="mr-1">✨</span>}
                   {option.text}
                 </span>
-                <span className={`text-sm font-mono ${isWinner ? 'text-violet-300' : 'text-gray-400'}`}>
+                <span className={`text-sm font-mono ${isWinner ? '[color:var(--accent-hover)]' : 'text-gray-400'}`}>
                   {option.votes} ({percentage.toFixed(1)}%)
                 </span>
               </div>

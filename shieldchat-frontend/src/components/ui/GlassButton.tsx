@@ -40,13 +40,13 @@ export const GlassButton = forwardRef<HTMLButtonElement, GlassButtonProps>(
 
     const variantClasses = {
       primary: `
-        bg-gradient-to-r from-violet-600 to-purple-600
-        border-violet-500/50
+        bg-[linear-gradient(to_right,var(--accent-gradient-from),var(--accent-gradient-to))]
+        border-[color:var(--border-accent)]
         text-white
-        hover:from-violet-500 hover:to-purple-500
-        hover:shadow-[0_0_30px_rgba(139,92,246,0.4)]
-        focus:ring-violet-500/50
-        ${glow ? "shadow-[0_0_20px_rgba(139,92,246,0.3)]" : ""}
+        hover:brightness-110
+        hover:shadow-[0_0_30px_var(--accent-primary-glow)]
+        focus:ring-[color:var(--accent-primary)]
+        ${glow ? "shadow-[0_0_20px_var(--accent-primary-glow)]" : ""}
       `,
       secondary: `
         bg-white/[0.05]

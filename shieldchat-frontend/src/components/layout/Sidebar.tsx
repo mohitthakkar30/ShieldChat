@@ -38,8 +38,8 @@ export function Sidebar({ onCreateChannel, refreshKey = 0 }: SidebarProps) {
         <Link href="/" className="flex items-center space-x-3 group">
           <div className="relative w-10 h-10 flex items-center justify-center">
             {/* Glow effect */}
-            <div className="absolute inset-0 bg-violet-500/20 rounded-xl blur-md group-hover:bg-violet-500/30 transition-all" />
-            <div className="relative w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+            <div className="absolute inset-0 bg-[color:var(--accent-primary)]/20 rounded-xl blur-md group-hover:bg-[color:var(--accent-primary)]/30 transition-all" />
+            <div className="relative w-10 h-10 bg-[linear-gradient(to_bottom_right,var(--accent-gradient-from),var(--accent-gradient-to))] rounded-xl flex items-center justify-center shadow-lg">
               <svg
                 className="w-5 h-5 text-white"
                 viewBox="0 0 24 24"
@@ -56,7 +56,7 @@ export function Sidebar({ onCreateChannel, refreshKey = 0 }: SidebarProps) {
             </div>
           </div>
           <div>
-            <span className="text-lg font-semibold font-display block text-white group-hover:text-violet-300 transition-colors">
+            <span className="text-lg font-semibold font-display block text-white group-hover:[color:var(--accent-hover)] transition-colors">
               ShieldChat
             </span>
             <div className="flex items-center gap-1.5">
@@ -111,7 +111,7 @@ export function Sidebar({ onCreateChannel, refreshKey = 0 }: SidebarProps) {
       <div className="shrink-0 p-4 border-t border-white/[0.06] glass-dark">
         <div className="flex items-center gap-3 mb-3">
           <div className="relative">
-            <div className="w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-lg">
+            <div className="w-10 h-10 bg-[linear-gradient(to_bottom_right,var(--accent-gradient-from),var(--accent-gradient-to))] rounded-full flex items-center justify-center text-sm font-bold text-white shadow-lg">
               {publicKey?.toString()[0] || "?"}
             </div>
             <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-[#12121a] rounded-full" />
@@ -119,12 +119,12 @@ export function Sidebar({ onCreateChannel, refreshKey = 0 }: SidebarProps) {
           <div className="flex-1 min-w-0">
             <button
               onClick={handleCopyAddress}
-              className="flex items-center gap-1.5 font-medium text-sm truncate hover:text-violet-400 transition-colors cursor-pointer group"
+              className="flex items-center gap-1.5 font-medium text-sm truncate hover:[color:var(--accent-hover)] transition-colors cursor-pointer group"
               title="Click to copy full address"
             >
               {formatWallet(publicKey)}
               <svg
-                className="w-3.5 h-3.5 text-gray-500 group-hover:text-violet-400 shrink-0 transition-colors"
+                className="w-3.5 h-3.5 text-gray-500 group-hover:[color:var(--accent-hover)] shrink-0 transition-colors"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"

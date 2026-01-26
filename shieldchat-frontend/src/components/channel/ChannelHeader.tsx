@@ -45,8 +45,8 @@ export function ChannelHeader({
         <div className="flex items-center space-x-3">
           {/* Channel Avatar */}
           <div className="relative">
-            <div className="absolute inset-0 bg-violet-500/20 rounded-xl blur-md" />
-            <div className="relative w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+            <div className="absolute inset-0 bg-[color:var(--accent-primary)]/20 rounded-xl blur-md" />
+            <div className="relative w-12 h-12 bg-[linear-gradient(to_bottom_right,var(--accent-gradient-from),var(--accent-gradient-to))] rounded-xl flex items-center justify-center shadow-lg">
               <span className="text-xl font-bold text-white">#</span>
             </div>
           </div>

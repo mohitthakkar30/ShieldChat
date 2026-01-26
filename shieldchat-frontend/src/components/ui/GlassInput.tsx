@@ -61,7 +61,7 @@ export const GlassInput = forwardRef<HTMLInputElement, GlassInputProps>(
                 ${iconPosition === "left" ? "left-4" : "right-4"}
                 text-gray-400
                 transition-colors duration-200
-                ${isFocused ? "text-violet-400" : ""}
+                ${isFocused ? "[color:var(--accent-primary)]" : ""}
               `}
             >
               <span className={iconSizeClasses[size]}>{icon}</span>
@@ -90,8 +90,8 @@ export const GlassInput = forwardRef<HTMLInputElement, GlassInputProps>(
               backdrop-blur-md
               transition-all duration-300 ease-out
               focus:outline-none
-              focus:border-violet-500/50
-              focus:shadow-[0_0_20px_rgba(139,92,246,0.15),inset_0_1px_0_rgba(255,255,255,0.05)]
+              focus:border-[color:var(--border-accent)]
+              focus:shadow-[0_0_20px_var(--accent-primary-glow),inset_0_1px_0_rgba(255,255,255,0.05)]
               focus:bg-white/[0.05]
               disabled:opacity-50 disabled:cursor-not-allowed
               ${error ? "border-red-500/50 focus:border-red-500/50 focus:shadow-[0_0_20px_rgba(239,68,68,0.15)]" : ""}
@@ -108,7 +108,7 @@ export const GlassInput = forwardRef<HTMLInputElement, GlassInputProps>(
               ${isFocused ? "opacity-100" : "opacity-0"}
             `}
             style={{
-              background: "linear-gradient(90deg, transparent, rgba(139,92,246,0.2), transparent)",
+              background: "linear-gradient(90deg, transparent, var(--accent-primary-glow), transparent)",
               maskImage: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
               maskComposite: "xor",
               WebkitMaskComposite: "xor",
@@ -175,8 +175,8 @@ export const GlassTextarea = forwardRef<HTMLTextAreaElement, GlassTextareaProps>
               resize-none
               transition-all duration-300 ease-out
               focus:outline-none
-              focus:border-violet-500/50
-              focus:shadow-[0_0_20px_rgba(139,92,246,0.15),inset_0_1px_0_rgba(255,255,255,0.05)]
+              focus:border-[color:var(--border-accent)]
+              focus:shadow-[0_0_20px_var(--accent-primary-glow),inset_0_1px_0_rgba(255,255,255,0.05)]
               focus:bg-white/[0.05]
               disabled:opacity-50 disabled:cursor-not-allowed
               ${error ? "border-red-500/50 focus:border-red-500/50" : ""}

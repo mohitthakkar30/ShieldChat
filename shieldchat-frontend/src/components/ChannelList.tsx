@@ -151,7 +151,7 @@ export function ChannelList({ onCreateChannel }: ChannelListProps) {
               onClick={() => setActiveFilter(tab.key)}
               className={`px-3 py-1.5 text-xs rounded-lg whitespace-nowrap transition-all ${
                 activeFilter === tab.key
-                  ? 'bg-purple-600 text-white'
+                  ? 'bg-[color:var(--accent-primary)] text-white'
                   : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50'
               }`}
             >
@@ -232,14 +232,14 @@ function ChannelCard({ channel, hasAccess }: { channel: Channel; hasAccess: bool
   return (
     <Link
       href={`/app/channels/${channel.publicKey.toString()}`}
-      className="group block p-3 rounded-xl bg-gray-800/30 hover:bg-gray-800/60 border border-transparent hover:border-purple-500/30 transition-all duration-200"
+      className="group block p-3 rounded-xl bg-gray-800/30 hover:bg-gray-800/60 border border-transparent hover:border-[color:var(--border-accent)] transition-all duration-200"
     >
       <div className="flex items-center gap-3">
         {/* Channel avatar */}
         <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
           isTokenGated
             ? "bg-gradient-to-br from-amber-500 to-orange-600"
-            : "bg-gradient-to-br from-purple-500 to-pink-500"
+            : "bg-[linear-gradient(to_bottom_right,var(--accent-gradient-from),var(--accent-gradient-to))]"
         } shadow-lg group-hover:shadow-xl transition-shadow`}>
           <span className="text-lg">{isTokenGated ? "🎫" : "#"}</span>
         </div>
