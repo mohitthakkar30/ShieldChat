@@ -31,11 +31,12 @@ The platform supports multiple channel types including direct messages, private 
 
 ### Frontend
 
-- **Next.js 16** - React framework for the web application
+- **Next.js 15** - React framework for the web application
 - **React 19** - UI component library
 - **TypeScript** - Type-safe JavaScript
-- **Tailwind CSS v4** - Utility-first styling
-- **Solana Wallet Adapter** - Multi-wallet support (Phantom, Solflare, etc.)
+- **Tailwind CSS v4** - Utility-first styling with responsive design
+- **Zustand** - Global state management
+- **Privy** - Wallet authentication (embedded wallets + external wallets like Phantom, Solflare)
 
 ### Blockchain
 
@@ -59,6 +60,7 @@ The platform supports multiple channel types including direct messages, private 
 
 - **WebSocket Presence Server** - Custom Node.js server for typing indicators and online status
 - **Helius WebSocket** - Real-time transaction notifications
+- **Browser Notifications** - Native push notifications for background message alerts
 
 ---
 
@@ -291,6 +293,7 @@ ShadowWire uses Bulletproof zero-knowledge proofs:
 - Instant message appearance
 - Typing indicators while composing
 - Read receipts for sent messages
+- Browser push notifications when tab is in background
 
 ### Voting System
 
@@ -418,6 +421,12 @@ ShadowWire uses Bulletproof zero-knowledge proofs:
 - Online status updates
 - Read receipt handling
 
+**useNotifications**
+- Browser Notification API integration
+- Permission request handling
+- Tab visibility tracking
+- Message and game notifications
+
 ### Key Components
 
 **Channel Components**
@@ -427,10 +436,15 @@ ShadowWire uses Bulletproof zero-knowledge proofs:
 - LeaveChannelModal - Exit channel confirmation
 
 **Message Components**
-- MessageBubble - Individual message display
+- MessageBubble - Individual message display (responsive with own/other alignment)
 - TypingIndicator - Show who is typing
 - ReadReceipt - Message read status
 - OnlineStatus - User availability indicator
+
+**Layout Components**
+- AppShell - Main application wrapper with responsive sidebar
+- Sidebar - Channel navigation with notification toggle
+- ChannelHeader - Responsive header with channel info and actions
 
 **Feature Components**
 - CreatePollModal - Poll creation interface
@@ -470,6 +484,12 @@ ShadowWire uses Bulletproof zero-knowledge proofs:
 - Message cache operations
 - Background sync logic
 - Query optimization
+
+**notifications.ts**
+- Browser Notification API wrapper
+- Permission request handling
+- Tab visibility detection
+- Auto-close notifications with click handling
 
 **constants.ts**
 - Program IDs
@@ -559,6 +579,12 @@ ShadowWire uses Bulletproof zero-knowledge proofs:
 - No permanent storage of presence data
 - Automatic cleanup of stale connections
 
+### Responsive Design
+- Mobile-first responsive layout
+- Collapsible sidebar for mobile devices
+- Adaptive header with icon-only buttons on narrow screens
+- Message bubbles optimized for all screen sizes
+
 ### Token-Gating Security
 - Stake verification on-chain
 - Cannot fake token holdings
@@ -612,7 +638,9 @@ Key differentiators include:
 - Anonymous voting through Inco's FHE
 - Private payments via ShadowWire's zero-knowledge proofs
 - Real-time presence via WebSocket server
+- Browser push notifications for background alerts
 - Flexible channel types including token-gated communities
 - In-channel gaming with on-chain fairness
+- Fully responsive design for mobile and desktop
 
 The architecture balances decentralization with usability, using IPFS for content storage, Supabase for caching, and WebSockets for real-time features while maintaining blockchain-level security guarantees for all critical operations.
