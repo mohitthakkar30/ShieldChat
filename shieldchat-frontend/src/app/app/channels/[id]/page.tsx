@@ -142,7 +142,7 @@ export default function ChannelPage() {
   } = useVoting(channelId, logMessage);
 
   // Games hook
-  const { ticTacToeGames, refreshGames } = useGames(channelPda);
+  const { ticTacToeGames, refreshGames, fetchSingleTTTGame } = useGames(channelPda);
 
   // Merge revealed polls into messages as poll result cards
   const allMessages = useMemo(() => {
@@ -335,16 +335,19 @@ export default function ChannelPage() {
     }
   };
 
-  const handleGameMessageClick = useCallback((gameId: string) => {
-    const game = ticTacToeGames.find(g => g.pubkey.toString() === gameId);
-    if (game) {
-      setSelectedGameFromMessage(game);
-      setShowGamesModal(true);
-    } else {
-      refreshGames();
-      setShowGamesModal(true);
+  const handleGameMessageClick = useCallback(async (gameId: string) => {
+    // Always fetch fresh game data to avoid stale state issues
+    try {
+      const gamePda = new PublicKey(gameId);
+      const freshGame = await fetchSingleTTTGame(gamePda);
+      if (freshGame) {
+        setSelectedGameFromMessage(freshGame);
+      }
+    } catch (err) {
+      console.error("Failed to fetch game:", err);
     }
-  }, [ticTacToeGames, refreshGames]);
+    setShowGamesModal(true);
+  }, [fetchSingleTTTGame]);
 
   // Loading states
   if (connecting) {

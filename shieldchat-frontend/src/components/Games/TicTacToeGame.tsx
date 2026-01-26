@@ -122,6 +122,11 @@ export default function TicTacToeGameComponent({
     setLoading(true);
     try {
       await claimTicTacToeWinnings(game.pubkey);
+      // Refresh local game state after successful claim
+      const updated = await fetchSingleTTTGame(game.pubkey);
+      if (updated) {
+        setGame(updated);
+      }
     } catch (error) {
       console.error("Failed to claim winnings:", error);
     } finally {

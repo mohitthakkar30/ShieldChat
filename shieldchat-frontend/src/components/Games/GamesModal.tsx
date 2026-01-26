@@ -42,14 +42,20 @@ export default function GamesModal({
   const [wager, setWager] = useState("0.01");
   const [creating, setCreating] = useState(false);
 
-  // Handle initialGame prop - open directly to that game
+  // Handle initialGame prop - open directly to that game after refreshing
   useEffect(() => {
     if (isOpen && initialGame) {
-      setSelectedGame(initialGame);
-      setView("ttt");
-      onInitialGameHandled?.();
+      // Refresh games first to get latest state, then show the game
+      refreshGames().then(() => {
+        setSelectedGame(initialGame);
+        setView("ttt");
+        onInitialGameHandled?.();
+      });
+    } else if (isOpen) {
+      // Just refresh when modal opens without initialGame
+      refreshGames();
     }
-  }, [isOpen, initialGame, onInitialGameHandled]);
+  }, [isOpen, initialGame, onInitialGameHandled, refreshGames]);
 
   if (!isOpen) return null;
 
@@ -73,10 +79,10 @@ export default function GamesModal({
     setView("ttt");
   };
 
-  const goBack = () => {
+  const goBack = async () => {
     setSelectedGame(null);
     setView("list");
-    refreshGames();
+    await refreshGames();
   };
 
   const renderGameList = () => (
@@ -183,7 +189,7 @@ export default function GamesModal({
           {view === "create-ttt" && renderCreateTicTacToe()}
           {view === "ttt" && selectedGame && (
             <TicTacToeGameComponent
-              game={selectedGame}
+              game={ticTacToeGames.find(g => g.pubkey.equals(selectedGame.pubkey)) || selectedGame}
               channelPubkey={channelPubkey}
               onBack={goBack}
             />
