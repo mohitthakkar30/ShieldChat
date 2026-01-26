@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { useGames, TicTacToeGame as TicTacToeGameType } from "@/hooks/useGames";
@@ -12,6 +12,7 @@ import {
   formatTimeAgo,
   getWinningPattern,
 } from "@/lib/arcium-mxe";
+import { useNotify } from "@/contexts/NotificationContext";
 
 interface TicTacToeGameProps {
   game: TicTacToeGameType;
@@ -37,6 +38,11 @@ export default function TicTacToeGameComponent({
   const [loading, setLoading] = useState(false);
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
 
+  // Notifications
+  const { notifyGame } = useNotify();
+  const prevStateRef = useRef(initialGame.account.state);
+  const prevPlayerORef = useRef(initialGame.account.playerO?.toString() || null);
+
   const isPlayerX = publicKey?.equals(game.account.playerX);
   const isPlayerO = game.account.playerO && publicKey?.equals(game.account.playerO);
 
@@ -45,6 +51,48 @@ export default function TicTacToeGameComponent({
     game.account.state === TicTacToeState.OWins ||
     game.account.state === TicTacToeState.Draw ||
     game.account.state === TicTacToeState.Cancelled;
+
+  // Notify on game state changes
+  useEffect(() => {
+    const prevState = prevStateRef.current;
+    const prevPlayerO = prevPlayerORef.current;
+    const currentState = game.account.state;
+    const currentPlayerO = game.account.playerO?.toString() || null;
+
+    // Update refs
+    prevStateRef.current = currentState;
+    prevPlayerORef.current = currentPlayerO;
+
+    // Don't notify on initial render
+    if (prevState === currentState && prevPlayerO === currentPlayerO) return;
+
+    // Someone joined the game (playerO changed from null to a value)
+    if (!prevPlayerO && currentPlayerO && isPlayerX) {
+      notifyGame("Tic Tac Toe", "Someone joined your game!");
+      return;
+    }
+
+    // It's now your turn
+    if (currentState === TicTacToeState.PlayerXTurn && isPlayerX && prevState === TicTacToeState.PlayerOTurn) {
+      notifyGame("Tic Tac Toe", "It's your turn!");
+      return;
+    }
+    if (currentState === TicTacToeState.PlayerOTurn && isPlayerO && prevState === TicTacToeState.PlayerXTurn) {
+      notifyGame("Tic Tac Toe", "It's your turn!");
+      return;
+    }
+
+    // Game ended
+    if (currentState === TicTacToeState.XWins || currentState === TicTacToeState.OWins) {
+      const youWon = game.account.winner && publicKey?.equals(game.account.winner);
+      notifyGame("Tic Tac Toe", youWon ? "You won! Claim your prize!" : "Game Over - You lost");
+      return;
+    }
+    if (currentState === TicTacToeState.Draw) {
+      notifyGame("Tic Tac Toe", "Game ended in a draw!");
+      return;
+    }
+  }, [game.account.state, game.account.playerO, game.account.winner, isPlayerX, isPlayerO, publicKey, notifyGame]);
 
   // Callback to refresh game state
   const refreshGameState = useCallback(async () => {

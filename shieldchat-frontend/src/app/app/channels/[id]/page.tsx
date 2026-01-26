@@ -20,6 +20,7 @@ import { GamesModal } from "@/components/Games";
 import { useGames, TicTacToeGame } from "@/hooks/useGames";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { ShimmerSkeleton } from "@/components/ui";
+import { useNotify } from "@/contexts/NotificationContext";
 
 // Glass morphism channel components
 import {
@@ -68,6 +69,9 @@ export default function ChannelPage() {
     stopPolling,
   } = useMessages(channelPda);
 
+  // Notifications
+  const { notifyMessage } = useNotify();
+
   // Helius real-time monitoring
   const handleNewMessage = useCallback(async (heliusMessage: HeliusMessage) => {
     const added = await addMessageFromHelius(
@@ -80,7 +84,12 @@ export default function ChannelPage() {
     if (!added) {
       fetchChannelMessages(true);
     }
-  }, [addMessageFromHelius, fetchChannelMessages]);
+
+    // Show notification for messages from others (not from self)
+    if (added && heliusMessage.sender !== publicKey?.toString()) {
+      notifyMessage("ShieldChat");
+    }
+  }, [addMessageFromHelius, fetchChannelMessages, publicKey, notifyMessage]);
 
   const {
     connected: heliusConnected,

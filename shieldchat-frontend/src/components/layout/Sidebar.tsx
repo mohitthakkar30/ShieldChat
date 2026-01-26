@@ -5,6 +5,7 @@ import { useStore } from "@/stores";
 import { GlassButton } from "@/components/ui";
 import { ChannelList } from "@/components/ChannelList";
 import { PrivyLoginButton } from "@/components/PrivyLoginButton";
+import { useNotifications } from "@/contexts/NotificationContext";
 
 interface SidebarProps {
   onCreateChannel: () => void;
@@ -14,6 +15,12 @@ interface SidebarProps {
 export function Sidebar({ onCreateChannel, refreshKey = 0 }: SidebarProps) {
   const publicKey = useStore((state) => state.user.publicKey);
   const setSidebarOpen = useStore((state) => state.setSidebarOpen);
+  const { permission, permissionGranted, requestPermission, isSupported } = useNotifications();
+
+  // Handle notification permission request
+  const handleEnableNotifications = async () => {
+    await requestPermission();
+  };
 
   // Format wallet address
   const formatWallet = (key: typeof publicKey) => {
@@ -95,6 +102,56 @@ export function Sidebar({ onCreateChannel, refreshKey = 0 }: SidebarProps) {
         >
           New Channel
         </GlassButton>
+
+        {/* Notification Toggle */}
+        {isSupported && (
+          <button
+            onClick={permission === "default" ? handleEnableNotifications : undefined}
+            disabled={permission !== "default"}
+            className={`w-full flex items-center gap-2 px-3 py-2.5 mt-2 rounded-xl text-sm transition-all ${
+              permission === "granted"
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                : permission === "denied"
+                ? "bg-red-500/10 text-red-400 border border-red-500/20 cursor-not-allowed"
+                : "glass-card hover:bg-white/[0.05] border border-white/[0.1] cursor-pointer"
+            }`}
+            title={
+              permission === "granted"
+                ? "Notifications are enabled"
+                : permission === "denied"
+                ? "Notifications blocked - enable in browser settings"
+                : "Click to enable notifications"
+            }
+          >
+            {permission === "granted" ? (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" className="text-emerald-400" />
+              </svg>
+            ) : permission === "denied" ? (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364L5.636 5.636" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+            )}
+            <span>
+              {permission === "granted"
+                ? "Notifications On"
+                : permission === "denied"
+                ? "Notifications Blocked"
+                : "Enable Notifications"}
+            </span>
+            {permissionGranted && (
+              <svg className="w-4 h-4 ml-auto text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Channel List */}

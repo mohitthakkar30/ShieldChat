@@ -7,6 +7,7 @@ import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { PrivyLoginButton } from "@/components/PrivyLoginButton";
 import { CreateChannelModal } from "@/components/CreateChannelModal";
 import { Sidebar } from "./Sidebar";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -123,6 +124,7 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   return (
+    <NotificationProvider>
     <div className="h-screen flex flex-col md:flex-row overflow-hidden particle-bg">
       {/* Mobile Header */}
       <header className="md:hidden fixed top-0 left-0 right-0 z-40 glass border-b border-white/[0.06] px-4 py-3 flex items-center justify-between">
@@ -241,5 +243,6 @@ export function AppShell({ children }: AppShellProps) {
         }}
       />
     </div>
+    </NotificationProvider>
   );
 }
