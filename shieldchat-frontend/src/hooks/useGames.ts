@@ -20,6 +20,7 @@ import {
 import GAMES_IDL from "@/types/arcium_mxe.json";
 import SHIELDCHAT_IDL from "@/idl/shield_chat.json";
 import { uploadMessage } from "@/lib/ipfs";
+import { getChannelGames, upsertGame, DbGame } from "@/lib/supabase";
 
 // ============================================================================
 // TYPES
@@ -548,13 +549,96 @@ export function useGames(channelPubkey: PublicKey | null) {
     [anchorWallet, getGamesProgram]
   );
 
-  // Fetch all games for a channel
+  // Convert DB game record to TicTacToeGameWithPda format
+  const convertDbGameToLocal = useCallback(
+    (dbGame: DbGame): TicTacToeGameWithPda => {
+      // Map DB state string to TicTacToeState enum
+      const stateMap: Record<string, TicTacToeState> = {
+        waiting: TicTacToeState.WaitingForPlayer,
+        x_turn: TicTacToeState.PlayerXTurn,
+        o_turn: TicTacToeState.PlayerOTurn,
+        x_wins: TicTacToeState.XWins,
+        o_wins: TicTacToeState.OWins,
+        draw: TicTacToeState.Draw,
+        cancelled: TicTacToeState.Cancelled,
+      };
+
+      return {
+        pubkey: new PublicKey(dbGame.game_pda),
+        account: {
+          channel: new PublicKey(dbGame.channel_pda),
+          playerX: new PublicKey(dbGame.player_x),
+          playerO: dbGame.player_o ? new PublicKey(dbGame.player_o) : null,
+          wager: new anchor.BN(dbGame.wager_lamports),
+          board: dbGame.board,
+          moveCount: dbGame.move_count,
+          winner: dbGame.winner ? new PublicKey(dbGame.winner) : null,
+          state: stateMap[dbGame.state] || TicTacToeState.WaitingForPlayer,
+          createdAt: new anchor.BN(new Date(dbGame.created_at).getTime() / 1000),
+          claimed: dbGame.claimed,
+          bump: 0, // Not stored in DB, not needed for display
+        },
+      };
+    },
+    []
+  );
+
+  // Convert local game to DB format for syncing
+  const convertLocalToDbGame = useCallback(
+    (game: TicTacToeGameWithPda): Omit<DbGame, "id" | "created_at" | "updated_at"> => {
+      const stateMap: Record<TicTacToeState, string> = {
+        [TicTacToeState.WaitingForPlayer]: "waiting",
+        [TicTacToeState.PlayerXTurn]: "x_turn",
+        [TicTacToeState.PlayerOTurn]: "o_turn",
+        [TicTacToeState.XWins]: "x_wins",
+        [TicTacToeState.OWins]: "o_wins",
+        [TicTacToeState.Draw]: "draw",
+        [TicTacToeState.Cancelled]: "cancelled",
+      };
+
+      const isCompleted = [
+        TicTacToeState.XWins,
+        TicTacToeState.OWins,
+        TicTacToeState.Draw,
+        TicTacToeState.Cancelled,
+      ].includes(game.account.state);
+
+      return {
+        game_pda: game.pubkey.toString(),
+        game_type: "tictactoe",
+        channel_pda: game.account.channel.toString(),
+        player_x: game.account.playerX.toString(),
+        player_o: game.account.playerO?.toString() || null,
+        wager_lamports: game.account.wager.toNumber(),
+        state: stateMap[game.account.state],
+        board: game.account.board,
+        move_count: game.account.moveCount,
+        winner: game.account.winner?.toString() || null,
+        claimed: game.account.claimed,
+        completed_at: isCompleted ? new Date().toISOString() : null,
+        create_tx_signature: null,
+        last_tx_signature: null,
+      };
+    },
+    []
+  );
+
+  // Fetch all games for a channel (hybrid: DB first, then on-chain)
   const fetchGames = useCallback(async () => {
     if (!channelPda || !anchorWallet) return;
 
     console.log("[useGames] Fetching games for channel:", channelPda);
 
     try {
+      // 1. First, try to fetch from Supabase DB (fast)
+      const dbGames = await getChannelGames(channelPda);
+      if (dbGames.length > 0) {
+        console.log("[useGames] Loaded", dbGames.length, "games from DB cache");
+        const cachedGames = dbGames.map(convertDbGameToLocal);
+        setTicTacToeGames(cachedGames);
+      }
+
+      // 2. Then fetch from on-chain (authoritative)
       const program = getGamesProgram();
       const channelPubkey = new PublicKey(channelPda);
 
@@ -585,14 +669,41 @@ export function useGames(channelPubkey: PublicKey | null) {
         (a, b) => b.account.createdAt.toNumber() - a.account.createdAt.toNumber()
       );
 
-      setTicTacToeGames(tttWithPda);
+      console.log("[useGames] Found TTT games on-chain:", tttWithPda.length);
 
-      console.log("[useGames] Found TTT games:", tttWithPda.length);
+      // 3. Only update UI if data actually changed (prevents flicker)
+      // Compare by creating a signature of the current state
+      const createGameSignature = (games: TicTacToeGameWithPda[]) => {
+        return games.map(g =>
+          `${g.pubkey.toString()}-${g.account.state}-${g.account.moveCount}-${g.account.claimed}-${g.account.playerO?.toString() || 'null'}`
+        ).sort().join('|');
+      };
+
+      setTicTacToeGames((currentGames) => {
+        const currentSig = createGameSignature(currentGames);
+        const newSig = createGameSignature(tttWithPda);
+
+        if (currentSig !== newSig) {
+          console.log("[useGames] Games changed, updating UI");
+          return tttWithPda;
+        }
+        console.log("[useGames] Games unchanged, skipping UI update");
+        return currentGames;
+      });
+
+      // 4. Sync on-chain data back to DB (background, don't await)
+      // This ensures DB stays up-to-date even if webhook missed something
+      tttWithPda.forEach((game) => {
+        const dbGame = convertLocalToDbGame(game);
+        upsertGame(dbGame).catch((err) => {
+          console.error("[useGames] Failed to sync game to DB:", err);
+        });
+      });
     } catch (err) {
       console.error("[useGames] Error fetching games:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch games");
     }
-  }, [channelPda, anchorWallet, getGamesProgram]);
+  }, [channelPda, anchorWallet, getGamesProgram, convertDbGameToLocal, convertLocalToDbGame]);
 
   // Fetch games when channel changes
   useEffect(() => {

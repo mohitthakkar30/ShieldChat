@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useWallet } from "@/hooks/usePrivyAnchorWallet";
 import { useGames, TicTacToeGame } from "@/hooks/useGames";
@@ -42,18 +42,33 @@ export default function GamesModal({
   const [wager, setWager] = useState("0.01");
   const [creating, setCreating] = useState(false);
 
+  // Track if we've already refreshed for this modal open
+  const hasRefreshedRef = useRef(false);
+  const prevIsOpenRef = useRef(isOpen);
+
   // Handle initialGame prop - open directly to that game after refreshing
   useEffect(() => {
-    if (isOpen && initialGame) {
-      // Refresh games first to get latest state, then show the game
-      refreshGames().then(() => {
-        setSelectedGame(initialGame);
-        setView("ttt");
-        onInitialGameHandled?.();
-      });
-    } else if (isOpen) {
-      // Just refresh when modal opens without initialGame
-      refreshGames();
+    // Reset refresh tracking when modal closes
+    if (!isOpen && prevIsOpenRef.current) {
+      hasRefreshedRef.current = false;
+    }
+    prevIsOpenRef.current = isOpen;
+
+    // Only refresh once when modal opens
+    if (isOpen && !hasRefreshedRef.current) {
+      hasRefreshedRef.current = true;
+
+      if (initialGame) {
+        // Refresh games first to get latest state, then show the game
+        refreshGames().then(() => {
+          setSelectedGame(initialGame);
+          setView("ttt");
+          onInitialGameHandled?.();
+        });
+      } else {
+        // Just refresh when modal opens without initialGame
+        refreshGames();
+      }
     }
   }, [isOpen, initialGame, onInitialGameHandled, refreshGames]);
 

@@ -508,3 +508,294 @@ export async function getInviteRedemptions(inviteId: string): Promise<DbInviteRe
     return [];
   }
 }
+
+// ============================================================================
+// GAMES
+// ============================================================================
+
+/**
+ * Database game record schema
+ * Matches the Supabase games table structure
+ */
+export interface DbGame {
+  id: string;
+  game_pda: string;
+  game_type: "tictactoe" | "coinflip";
+  channel_pda: string;
+  player_x: string;
+  player_o: string | null;
+  wager_lamports: number;
+  state: string;
+  board: number[];
+  move_count: number;
+  winner: string | null;
+  claimed: boolean;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  create_tx_signature: string | null;
+  last_tx_signature: string | null;
+}
+
+/**
+ * Game move record schema
+ */
+export interface DbGameMove {
+  id: string;
+  game_pda: string;
+  move_number: number;
+  player: string;
+  position: number | null;
+  move_data: Record<string, unknown> | null;
+  tx_signature: string;
+  created_at: string;
+}
+
+/**
+ * Player statistics record
+ */
+export interface DbPlayerStats {
+  game_type: string;
+  total_games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  total_won_lamports: number;
+  total_wagered_lamports: number;
+  win_rate: number;
+}
+
+/**
+ * Fetch all games for a channel from Supabase
+ * Returns games sorted by created_at descending (newest first)
+ */
+export async function getChannelGames(channelPda: string): Promise<DbGame[]> {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("games")
+      .select("*")
+      .eq("channel_pda", channelPda)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[Supabase] Error fetching games:", error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error("[Supabase] Get channel games failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Fetch only active (in-progress) games for a channel
+ */
+export async function getActiveGames(channelPda: string): Promise<DbGame[]> {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("games")
+      .select("*")
+      .eq("channel_pda", channelPda)
+      .in("state", ["waiting", "x_turn", "o_turn"])
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[Supabase] Error fetching active games:", error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error("[Supabase] Get active games failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Fetch completed games for a channel (for history view)
+ */
+export async function getCompletedGames(
+  channelPda: string,
+  limit = 50
+): Promise<DbGame[]> {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("games")
+      .select("*")
+      .eq("channel_pda", channelPda)
+      .in("state", ["x_wins", "o_wins", "draw", "cancelled"])
+      .order("completed_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error("[Supabase] Error fetching completed games:", error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error("[Supabase] Get completed games failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Fetch a single game by PDA
+ */
+export async function getGameByPda(gamePda: string): Promise<DbGame | null> {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("games")
+      .select("*")
+      .eq("game_pda", gamePda)
+      .single();
+
+    if (error) {
+      if (error.code !== "PGRST116") {
+        // Not a "not found" error
+        console.error("[Supabase] Error fetching game:", error.message);
+      }
+      return null;
+    }
+
+    return data;
+  } catch (err) {
+    console.error("[Supabase] Get game by PDA failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Fetch games where a specific player is participating
+ */
+export async function getPlayerGames(
+  playerPubkey: string,
+  limit = 50
+): Promise<DbGame[]> {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("games")
+      .select("*")
+      .or(`player_x.eq.${playerPubkey},player_o.eq.${playerPubkey}`)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error("[Supabase] Error fetching player games:", error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error("[Supabase] Get player games failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Get player statistics
+ */
+export async function getPlayerStats(
+  playerPubkey: string
+): Promise<DbPlayerStats[]> {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase.rpc("get_player_game_stats", {
+      player_pubkey: playerPubkey,
+    });
+
+    if (error) {
+      console.error("[Supabase] Error fetching player stats:", error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error("[Supabase] Get player stats failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Fetch moves for a specific game
+ */
+export async function getGameMoves(gamePda: string): Promise<DbGameMove[]> {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("game_moves")
+      .select("*")
+      .eq("game_pda", gamePda)
+      .order("move_number", { ascending: true });
+
+    if (error) {
+      console.error("[Supabase] Error fetching game moves:", error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error("[Supabase] Get game moves failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Save or update a game in the database
+ * Used for client-side sync when webhook hasn't processed yet
+ */
+export async function upsertGame(
+  game: Omit<DbGame, "id" | "created_at" | "updated_at">
+): Promise<boolean> {
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
+
+  try {
+    const { error } = await supabase.from("games").upsert(
+      {
+        ...game,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "game_pda" }
+    );
+
+    if (error) {
+      console.error("[Supabase] Error upserting game:", error.message);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[Supabase] Upsert game failed:", err);
+    return false;
+  }
+}
