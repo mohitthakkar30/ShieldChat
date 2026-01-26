@@ -173,7 +173,7 @@ export function MessagesArea({
 
   // Messages list
   return (
-    <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 flex flex-col-reverse">
+    <div className="flex-1 overflow-y-auto min-h-0 p-2 md:p-4 space-y-3 md:space-y-4 flex flex-col-reverse">
       {[...messages].reverse().map((message, index) => {
         const messageKey = message.id;
         return (

@@ -52,7 +52,7 @@ export function MessageBubble({
         />
       )}
 
-      <div className={`max-w-[70%] ${isOwnMessage ? 'items-end' : 'items-start'} flex flex-col`}>
+      <div className={`max-w-[85%] md:max-w-[70%] ${isOwnMessage ? 'items-end' : 'items-start'} flex flex-col min-w-0`}>
         <div className={`flex items-baseline gap-2 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
           {!isOwnMessage && (
             <span className="font-medium text-sm text-gray-300">
@@ -70,12 +70,12 @@ export function MessageBubble({
 
         {/* Message content bubble */}
         {message.content && (
-          <div className={`mt-1 px-4 py-3 rounded-2xl backdrop-blur-sm transition-all duration-300 ${
+          <div className={`mt-1 px-3 py-2 md:px-4 md:py-3 rounded-2xl backdrop-blur-sm transition-all duration-300 ${
             isOwnMessage
               ? 'message-bubble-own text-white rounded-br-md shadow-[0_0_20px_var(--accent-primary-glow)]'
               : 'bg-white/[0.05] border border-white/[0.08] text-gray-200 rounded-bl-md'
           }`}>
-            <p className="break-words leading-relaxed">{message.content}</p>
+            <p className="break-words leading-relaxed text-sm md:text-base">{message.content}</p>
           </div>
         )}
 
