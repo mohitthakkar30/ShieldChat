@@ -520,3 +520,63 @@ export function resetHeliusGamesClient(): void {
     heliusGamesInstance = null;
   }
 }
+
+/**
+ * Token metadata from Helius DAS API
+ */
+export interface TokenMetadata {
+  name: string;
+  symbol: string;
+  decimals: number;
+}
+
+/**
+ * Fetch token metadata (name, symbol, decimals) using Helius DAS API
+ * Works for both fungible tokens and NFTs
+ * @param mintAddress - The token mint address
+ * @returns Token metadata or null if not found
+ */
+export async function getTokenMetadata(mintAddress: string): Promise<TokenMetadata | null> {
+  const apiKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY;
+
+  if (!apiKey) {
+    console.warn("[Helius] No API key configured for getTokenMetadata");
+    return null;
+  }
+
+  try {
+    const response = await fetch(`https://devnet.helius-rpc.com/?api-key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'get-asset',
+        method: 'getAsset',
+        params: { id: mintAddress }
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      console.error('[Helius] getAsset error:', data.error);
+      return null;
+    }
+
+    // Extract metadata from response
+    const result = data.result;
+    const metadata = result?.content?.metadata;
+    const tokenInfo = result?.token_info;
+
+    return {
+      name: metadata?.name || 'Unknown Token',
+      symbol: metadata?.symbol || 'UNKNOWN',
+      decimals: tokenInfo?.decimals ?? 0,
+    };
+  } catch (error) {
+    console.error('[Helius] Failed to fetch token metadata:', error);
+    return null;
+  }
+}

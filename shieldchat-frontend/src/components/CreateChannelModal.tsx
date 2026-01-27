@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useShieldChat } from "@/hooks/useShieldChat";
+import { getTokenMetadata, TokenMetadata } from "@/lib/helius";
 
 interface CreateChannelModalProps {
   isOpen: boolean;
@@ -23,6 +24,58 @@ export function CreateChannelModal({
   // Token-gating configuration
   const [tokenMint, setTokenMint] = useState("");
   const [minTokenAmount, setMinTokenAmount] = useState("");
+
+  // Token metadata state
+  const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
+  const [fetchingMetadata, setFetchingMetadata] = useState(false);
+
+  // Fetch token metadata when mint address changes
+  const fetchMetadata = useCallback(async (mint: string) => {
+    // Validate that it's a valid public key first
+    try {
+      new PublicKey(mint.trim());
+    } catch {
+      setTokenMetadata(null);
+      return;
+    }
+
+    setFetchingMetadata(true);
+    try {
+      const metadata = await getTokenMetadata(mint.trim());
+      setTokenMetadata(metadata);
+      if (!metadata) {
+        setLocalError("Could not fetch token metadata. Please verify the mint address.");
+      } else {
+        setLocalError(null);
+      }
+    } catch (err) {
+      console.error("Failed to fetch token metadata:", err);
+      setTokenMetadata(null);
+    } finally {
+      setFetchingMetadata(false);
+    }
+  }, []);
+
+  // Debounce mint address changes
+  useEffect(() => {
+    if (!tokenMint.trim() || type !== "tokenGated") {
+      setTokenMetadata(null);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      fetchMetadata(tokenMint);
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [tokenMint, type, fetchMetadata]);
+
+  // Convert human-readable amount to raw amount using decimals
+  const getRawAmount = useCallback((humanAmount: string, decimals: number): bigint => {
+    const amount = parseFloat(humanAmount);
+    if (isNaN(amount) || amount <= 0) return BigInt(0);
+    return BigInt(Math.floor(amount * Math.pow(10, decimals)));
+  }, []);
 
   if (!isOpen) return null;
 
@@ -52,20 +105,28 @@ export function CreateChannelModal({
         setLocalError("Invalid token mint address");
         return;
       }
+      // Ensure we have token metadata for decimals
+      if (!tokenMetadata) {
+        setLocalError("Please wait for token metadata to load or verify the mint address");
+        return;
+      }
     }
 
     try {
       const result = await createChannel(name.trim(), type);
 
       // If token-gated, set the token requirements and initialize vault
-      if (type === "tokenGated" && tokenMint && minTokenAmount) {
+      if (type === "tokenGated" && tokenMint && minTokenAmount && tokenMetadata) {
         const tokenMintPubkey = new PublicKey(tokenMint.trim());
+
+        // Convert human-readable amount to raw amount using token decimals
+        const rawAmount = getRawAmount(minTokenAmount, tokenMetadata.decimals);
 
         // Set token gate requirements
         await setTokenGate(
           result.channelPda,
           tokenMintPubkey,
-          BigInt(minTokenAmount)
+          rawAmount
         );
 
         // Initialize the token vault for staking
@@ -77,6 +138,7 @@ export function CreateChannelModal({
       setType("privateGroup");
       setTokenMint("");
       setMinTokenAmount("");
+      setTokenMetadata(null);
       onSuccess();
       onClose();
     } catch (err) {
@@ -189,25 +251,46 @@ export function CreateChannelModal({
                   placeholder="e.g., EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
                   className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  The SPL token mint address that users must stake
-                </p>
+                {fetchingMetadata && (
+                  <p className="text-xs text-yellow-400 mt-1">
+                    Fetching token info...
+                  </p>
+                )}
+                {tokenMetadata && (
+                  <p className="text-xs text-green-400 mt-1">
+                    {tokenMetadata.symbol} · {tokenMetadata.decimals} decimals
+                  </p>
+                )}
+                {!fetchingMetadata && !tokenMetadata && tokenMint.trim() && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Enter a valid SPL token mint address
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  Stake Amount (smallest units)
+                  Stake Amount {tokenMetadata ? `(${tokenMetadata.symbol})` : ""}
                 </label>
                 <input
                   type="number"
                   value={minTokenAmount}
                   onChange={(e) => setMinTokenAmount(e.target.value)}
-                  placeholder="e.g., 1000000 for 1 USDC (6 decimals)"
-                  min="1"
+                  placeholder={tokenMetadata ? `e.g., 5 ${tokenMetadata.symbol}` : "e.g., 5"}
+                  min="0.000001"
+                  step="any"
                   className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 transition-colors"
+                  disabled={!tokenMetadata}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Amount to stake (e.g., 1 USDC = 1000000 with 6 decimals)
-                </p>
+                {tokenMetadata && minTokenAmount && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Raw amount: {getRawAmount(minTokenAmount, tokenMetadata.decimals).toString()} (with {tokenMetadata.decimals} decimals)
+                  </p>
+                )}
+                {!tokenMetadata && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Enter token mint address first to enable amount input
+                  </p>
+                )}
               </div>
             </div>
           )}
