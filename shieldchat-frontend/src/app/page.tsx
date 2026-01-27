@@ -160,7 +160,7 @@ export default function Home() {
             />
             <TechCard
               name="Helius"
-              description="Real-time RPC"
+              description="Real-time On-chain Data"
               icon="H"
               color="bg-gradient-to-br from-orange-500 to-amber-600"
             />
