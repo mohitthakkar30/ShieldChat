@@ -165,12 +165,6 @@ export default function Home() {
               color="bg-gradient-to-br from-orange-500 to-amber-600"
             />
             <TechCard
-              name="MagicBlock"
-              description="Presence"
-              icon="M"
-              color="bg-gradient-to-br from-cyan-500 to-blue-600"
-            />
-            <TechCard
               name="IPFS"
               description="Storage"
               icon="IP"
@@ -264,7 +258,7 @@ export default function Home() {
                   <h3 className="text-xl font-semibold mb-2 font-display">Real-Time Everything</h3>
                   <p className="text-gray-400 mb-4">
                     Sub-second message delivery via Helius WebSockets. Real-time presence, typing indicators,
-                    and read receipts powered by MagicBlock&apos;s ephemeral rollups.
+                    and read receipts powered by WebSocket server.
                   </p>
                   <div className="flex gap-4 text-sm">
                     <span className="text-cyan-400 font-mono">&lt;1s delivery</span>
