@@ -1,5 +1,8 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import { getTokenMetadata, TokenMetadata } from "@/lib/helius";
+
 interface LeaveChannelModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -8,6 +11,7 @@ interface LeaveChannelModalProps {
   channelName: string;
   isTokenGated: boolean;
   stakedAmount?: string;
+  tokenMint?: string;
 }
 
 export function LeaveChannelModal({
@@ -18,7 +22,43 @@ export function LeaveChannelModal({
   channelName,
   isTokenGated,
   stakedAmount,
+  tokenMint,
 }: LeaveChannelModalProps) {
+  const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
+
+  // Fetch token metadata when modal opens with a token-gated channel
+  useEffect(() => {
+    if (isOpen && isTokenGated && tokenMint) {
+      getTokenMetadata(tokenMint)
+        .then(setTokenMetadata)
+        .catch(console.error);
+    } else {
+      setTokenMetadata(null);
+    }
+  }, [isOpen, isTokenGated, tokenMint]);
+
+  // Format raw token amount to human-readable using decimals
+  const formatTokenAmount = (rawAmount: string, decimals: number): string => {
+    const amount = BigInt(rawAmount);
+    const divisor = BigInt(10 ** decimals);
+    const whole = amount / divisor;
+    const remainder = amount % divisor;
+    if (remainder === BigInt(0)) {
+      return whole.toString();
+    }
+    const decimalStr = remainder.toString().padStart(decimals, '0').replace(/0+$/, '');
+    return `${whole}.${decimalStr}`;
+  };
+
+  // Get formatted staked amount
+  const getFormattedAmount = (): string => {
+    if (!stakedAmount) return "";
+    if (tokenMetadata) {
+      return `${formatTokenAmount(stakedAmount, tokenMetadata.decimals)} ${tokenMetadata.symbol}`;
+    }
+    return stakedAmount;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -63,7 +103,7 @@ export function LeaveChannelModal({
                 <span>Tokens Will Be Returned</span>
               </div>
               <p className="text-sm text-gray-400">
-                Your staked tokens ({stakedAmount}) will be returned to your wallet when you leave this channel.
+                Your staked tokens ({getFormattedAmount()}) will be returned to your wallet when you leave this channel.
               </p>
             </div>
           )}

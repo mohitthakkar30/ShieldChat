@@ -536,6 +536,7 @@ export default function ChannelPage() {
         channelName={channelName || "this channel"}
         isTokenGated={!!channel?.account.requiredTokenMint}
         stakedAmount={channel?.account.minTokenAmount?.toString()}
+        tokenMint={channel?.account.requiredTokenMint?.toString()}
       />
 
       <CreatePollModal

@@ -11,6 +11,7 @@ import { useInvites } from "@/hooks/useInvites";
 import { useShieldChat, Channel } from "@/hooks/useShieldChat";
 import { DbInvite } from "@/lib/supabase";
 import { parseChannelType } from "@/lib/anchor";
+import { getTokenMetadata, TokenMetadata } from "@/lib/helius";
 
 export default function JoinPage() {
   const params = useParams();
@@ -40,6 +41,7 @@ export default function JoinPage() {
   const [tokenBalance, setTokenBalance] = useState<bigint | null>(null);
   const [userTokenAccount, setUserTokenAccount] = useState<PublicKey | null>(null);
   const [checkingTokenBalance, setCheckingTokenBalance] = useState(false);
+  const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
 
   // Fetch invite details - only run once per code
   useEffect(() => {
@@ -94,6 +96,22 @@ export default function JoinPage() {
   useEffect(() => {
     hasFetchedInvite.current = false;
   }, [code]);
+
+  // Fetch token metadata for token-gated channels
+  useEffect(() => {
+    if (!channelData?.account.requiredTokenMint) {
+      setTokenMetadata(null);
+      return;
+    }
+
+    const fetchMetadata = async () => {
+      const mintAddress = channelData.account.requiredTokenMint!.toString();
+      const metadata = await getTokenMetadata(mintAddress);
+      setTokenMetadata(metadata);
+    };
+
+    fetchMetadata();
+  }, [channelData]);
 
   // Check token balance for token-gated channels
   useEffect(() => {
@@ -184,7 +202,10 @@ export default function JoinPage() {
     if (channelData?.account.requiredTokenMint && channelData?.account.minTokenAmount) {
       const minAmount = channelData.account.minTokenAmount;
       if (tokenBalance === null || tokenBalance < minAmount) {
-        setJoinError(`Insufficient token balance. You need at least ${minAmount.toString()} tokens to join this channel.`);
+        const formattedAmount = tokenMetadata
+          ? `${formatTokenAmount(minAmount, tokenMetadata.decimals)} ${tokenMetadata.symbol}`
+          : minAmount.toString();
+        setJoinError(`Insufficient token balance. You need at least ${formattedAmount} to join this channel.`);
         return;
       }
     }
@@ -222,6 +243,23 @@ export default function JoinPage() {
       router.push(`/app/channels/${invite.channel_pda}`);
     }
   }, [invite, router]);
+
+  // Helper to format raw token amount to human-readable
+  const formatTokenAmount = useCallback((rawAmount: bigint, decimals: number): string => {
+    const divisor = BigInt(10 ** decimals);
+    const wholePart = rawAmount / divisor;
+    const fractionalPart = rawAmount % divisor;
+
+    if (fractionalPart === BigInt(0)) {
+      return wholePart.toString();
+    }
+
+    // Pad fractional part with leading zeros
+    const fractionalStr = fractionalPart.toString().padStart(decimals, '0');
+    // Remove trailing zeros
+    const trimmed = fractionalStr.replace(/0+$/, '');
+    return `${wholePart}.${trimmed}`;
+  }, []);
 
   // Only check inviteLoading and status - shieldChatLoading causes infinite loop
   // because fetchChannel changes reference when anchorWallet initializes
@@ -362,14 +400,27 @@ export default function JoinPage() {
                   </p>
                   <div className="text-sm space-y-1">
                     <div className="flex justify-between text-gray-400">
-                      <span>Token to stake:</span>
-                      <span className="text-gray-300 font-mono text-xs">
-                        {channelData.account.requiredTokenMint.toString().slice(0, 4)}...{channelData.account.requiredTokenMint.toString().slice(-4)}
-                      </span>
+                      <span>Token:</span>
+                      {tokenMetadata ? (
+                        <span className="text-gray-300">
+                          {tokenMetadata.symbol}
+                          <span className="text-gray-500 text-xs ml-1">
+                            ({channelData.account.requiredTokenMint.toString().slice(0, 4)}...{channelData.account.requiredTokenMint.toString().slice(-4)})
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 font-mono text-xs">
+                          {channelData.account.requiredTokenMint.toString().slice(0, 4)}...{channelData.account.requiredTokenMint.toString().slice(-4)}
+                        </span>
+                      )}
                     </div>
                     <div className="flex justify-between text-gray-400">
                       <span>Stake amount:</span>
-                      <span className="text-gray-300">{channelData.account.minTokenAmount.toString()}</span>
+                      <span className="text-gray-300">
+                        {tokenMetadata
+                          ? `${formatTokenAmount(channelData.account.minTokenAmount, tokenMetadata.decimals)} ${tokenMetadata.symbol}`
+                          : channelData.account.minTokenAmount.toString()}
+                      </span>
                     </div>
                     {connected && (
                       <div className="flex justify-between text-gray-400 pt-2 border-t border-gray-700 mt-2">
@@ -378,7 +429,9 @@ export default function JoinPage() {
                           <span className="text-gray-500">Checking...</span>
                         ) : tokenBalance !== null ? (
                           <span className={tokenBalance >= channelData.account.minTokenAmount ? "text-green-400" : "text-red-400"}>
-                            {tokenBalance.toString()}
+                            {tokenMetadata
+                              ? `${formatTokenAmount(tokenBalance, tokenMetadata.decimals)} ${tokenMetadata.symbol}`
+                              : tokenBalance.toString()}
                             {tokenBalance >= channelData.account.minTokenAmount ? " ✓" : " ✗"}
                           </span>
                         ) : (

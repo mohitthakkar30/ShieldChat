@@ -1,9 +1,11 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { ChatMessage } from "@/hooks/useMessages";
 import { MessageBubble } from "./MessageBubble";
 import { GlassButton, ShimmerSkeleton } from "@/components/ui";
 import { PublicKey } from "@solana/web3.js";
+import { getTokenMetadata, TokenMetadata } from "@/lib/helius";
 
 interface MessagesAreaProps {
   messages: ChatMessage[];
@@ -41,6 +43,31 @@ export function MessagesArea({
   channel,
   membershipChecked,
 }: MessagesAreaProps) {
+  // Token metadata for displaying human-readable amounts
+  const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
+
+  useEffect(() => {
+    if (channel?.account.requiredTokenMint) {
+      getTokenMetadata(channel.account.requiredTokenMint.toString())
+        .then(setTokenMetadata)
+        .catch(console.error);
+    }
+  }, [channel?.account.requiredTokenMint]);
+
+  // Format raw token amount to human-readable using decimals
+  const formatTokenAmount = (rawAmount: bigint | number | string, decimals: number): string => {
+    // Convert to bigint if not already
+    const amount = typeof rawAmount === 'bigint' ? rawAmount : BigInt(rawAmount.toString());
+    const divisor = BigInt(10 ** decimals);
+    const whole = amount / divisor;
+    const remainder = amount % divisor;
+    if (remainder === BigInt(0)) {
+      return whole.toString();
+    }
+    const decimalStr = remainder.toString().padStart(decimals, '0').replace(/0+$/, '');
+    return `${whole}.${decimalStr}`;
+  };
+
   // PRIORITY: If we have messages, show them! Don't show skeleton.
   // This prevents the skeleton flash when switching channels.
   const hasMessages = messages.length > 0;
@@ -108,7 +135,12 @@ export function MessagesArea({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Stake amount:</span>
-                  <span className="text-white font-semibold">{channel.account.minTokenAmount.toString()}</span>
+                  <span className="text-white font-semibold">
+                    {tokenMetadata
+                      ? `${formatTokenAmount(channel.account.minTokenAmount, tokenMetadata.decimals)} ${tokenMetadata.symbol}`
+                      : channel.account.minTokenAmount.toString()
+                    }
+                  </span>
                 </div>
               </div>
             </div>

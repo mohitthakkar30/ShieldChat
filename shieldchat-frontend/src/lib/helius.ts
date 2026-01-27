@@ -532,7 +532,7 @@ export interface TokenMetadata {
 
 /**
  * Fetch token metadata (name, symbol, decimals) using Helius DAS API
- * Works for both fungible tokens and NFTs
+ * Falls back to direct mint account parsing if DAS doesn't have metadata
  * @param mintAddress - The token mint address
  * @returns Token metadata or null if not found
  */
@@ -544,8 +544,11 @@ export async function getTokenMetadata(mintAddress: string): Promise<TokenMetada
     return null;
   }
 
+  const rpcUrl = `https://devnet.helius-rpc.com/?api-key=${apiKey}`;
+
   try {
-    const response = await fetch(`https://devnet.helius-rpc.com/?api-key=${apiKey}`, {
+    // First try the DAS getAsset method (works for tokens with metadata)
+    const response = await fetch(rpcUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -560,21 +563,50 @@ export async function getTokenMetadata(mintAddress: string): Promise<TokenMetada
 
     const data = await response.json();
 
-    if (data.error) {
-      console.error('[Helius] getAsset error:', data.error);
-      return null;
+    if (!data.error && data.result) {
+      const result = data.result;
+      const metadata = result?.content?.metadata;
+      const tokenInfo = result?.token_info;
+
+      // If we got token_info with decimals, return it
+      if (tokenInfo?.decimals !== undefined) {
+        return {
+          name: metadata?.name || 'Unknown Token',
+          symbol: metadata?.symbol || mintAddress.slice(0, 4).toUpperCase(),
+          decimals: tokenInfo.decimals,
+        };
+      }
     }
 
-    // Extract metadata from response
-    const result = data.result;
-    const metadata = result?.content?.metadata;
-    const tokenInfo = result?.token_info;
+    // Fallback: Fetch mint account directly to get decimals
+    const mintResponse = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'get-account',
+        method: 'getAccountInfo',
+        params: [
+          mintAddress,
+          { encoding: 'jsonParsed' }
+        ]
+      }),
+    });
 
-    return {
-      name: metadata?.name || 'Unknown Token',
-      symbol: metadata?.symbol || 'UNKNOWN',
-      decimals: tokenInfo?.decimals ?? 0,
-    };
+    const mintData = await mintResponse.json();
+
+    if (mintData.result?.value?.data?.parsed?.info) {
+      const info = mintData.result.value.data.parsed.info;
+      return {
+        name: 'SPL Token',
+        symbol: mintAddress.slice(0, 4).toUpperCase(),
+        decimals: info.decimals ?? 0,
+      };
+    }
+
+    return null;
   } catch (error) {
     console.error('[Helius] Failed to fetch token metadata:', error);
     return null;
