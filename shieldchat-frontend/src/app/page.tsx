@@ -291,12 +291,12 @@ export default function Home() {
             <StepCard
               step={1}
               title="Connect Wallet"
-              description="No email. No password. Your Solana wallet is your identity. Just connect and you're in."
+              description="Your Solana wallet is your identity. Just connect and you're in."
             />
             <StepCard
               step={2}
               title="Join or Create"
-              description="Browse public channels, join token-gated communities with your NFTs, or create private groups."
+              description="Browse public channels, join token-gated communities with your tokens, or create private groups."
             />
             <StepCard
               step={3}
