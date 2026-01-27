@@ -216,7 +216,7 @@ export default function Home() {
               </div>
               <h3 className="text-lg font-semibold mb-2 font-display">Token-Gated Channels</h3>
               <p className="text-gray-400 text-sm">
-                Create exclusive communities for NFT holders or token communities. Membership verified on-chain with staking.
+                Create exclusive communities for NFT or token holders. Membership verified on-chain with staking.
               </p>
             </div>
 
