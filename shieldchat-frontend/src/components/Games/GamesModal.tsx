@@ -113,7 +113,7 @@ export default function GamesModal({
       {/* Active Games */}
       <div className="space-y-2">
         <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
-          Active Games
+          Total Games
         </h3>
 
         {loading ? (
