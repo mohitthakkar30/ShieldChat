@@ -8,12 +8,27 @@
  * ephemeral rollups for true privacy.
  */
 
+import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 
 const PORT = process.env.PORT || 3001;
 
-// Create WebSocket server
-const wss = new WebSocketServer({ port: PORT });
+// Create HTTP server with health check endpoint
+const httpServer = createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok", service: "presence-server" }));
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+// Create WebSocket server attached to HTTP server
+const wss = new WebSocketServer({ server: httpServer });
+
+// Start HTTP server
+httpServer.listen(PORT);
 
 // Presence state: channelId -> Map<wallet, presence>
 const presenceByChannel = new Map();
